@@ -199,8 +199,10 @@ def _read_service_account(name, namespace):
     return api_service_account_response
 
 
-def _check_service_account_changed(api_service_account_response, labels):
-    if cmp(api_service_account_response.metadata.labels, labels) == 0:
+def _check_service_account_changed(api_service_account_response, module):
+    if (cmp(api_service_account_response.metadata.labels, module.params.get('labels')) == 0) and \
+            (cmp(api_service_account_response.secrets, module.params.get('secrets')) == 0) and \
+            (cmp(api_service_account_response.image_pull_secrets, module.params.get('image_pull_secrets')) == 0):
         return False
     else:
         return True
@@ -222,7 +224,7 @@ def create_or_update_service_account(module):
 
     try:
         api_service_account_response = _read_service_account(name, namespace)
-        if _check_service_account_changed(api_service_account_response, labels):
+        if _check_service_account_changed(api_service_account_response, module):
             try:
                 results = api.patch_namespaced_service_account(
                     client.V1ServiceAccount(metadata=client.V1ObjectMeta(name=namespace, labels=labels)))
@@ -285,6 +287,8 @@ def main():
         argument_spec=dict(
             namespace=dict(type='str', required=True),
             name=dict(type='str', required=True),
+            image_pull_secrets=dict(type='list', aliases=['pull_secrets']),
+            secrets=dict(type='dict'),
             state=dict(type='str', default='present', choices=['absent', 'present']),
             labels=dict(type='dict')
         )
