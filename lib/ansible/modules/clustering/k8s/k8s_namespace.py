@@ -33,7 +33,7 @@ EXAMPLES = '''
 - k8s_namespace:
     namespace: development
     state: present
-    labes:
+    labels:
       key: value
   register: dev_namespace
 
@@ -251,13 +251,12 @@ def destroy_namespace(module):
     try:
         api_namespace_response = _read_namespace(namespace)
         try:
-            api.delete_namespace(name=namespace, body=delete_options, propagation_policy="")
+            api_namespace_response = api.delete_namespace(name=namespace, body=delete_options, propagation_policy="")
         except ApiException as e:
             module.fail_json(msg="Unable to Delete k8s Namespace: {0}".format(to_native(e)),
                              exception=traceback.format_exc())
-
         results = api_namespace_response
-        changed = False
+        changed = True
 
     except ApiException as e:
         if e.status != 404:
