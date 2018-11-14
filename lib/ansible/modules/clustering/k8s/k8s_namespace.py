@@ -5,6 +5,7 @@
 from __future__ import absolute_import, division, print_function
 __metaclass__ = type
 
+import traceback
 
 ANSIBLE_METADATA = {'metadata_version': '1.1',
                     'status': ['preview'],
@@ -17,7 +18,7 @@ module: k8s_namespace
 short_description: Manages namespace in Kubernetes Cluster
 description:
   - Retrieve the attributes of a server certificate
-version_added: "2.7"
+version_added: "2.8"
 author: "Vijayanand Sharma (@vijayanandsharma)"
 requirements: [kubernetes]
 options:
@@ -173,6 +174,8 @@ status:
           description: Status/Phase of the Object
 '''
 
+from ansible.module_utils.basic import AnsibleModule
+from ansible.module_utils._text import to_native
 from kubernetes import client, config
 from kubernetes.client.rest import ApiException
 
@@ -182,73 +185,109 @@ try:
 except ImportError:
     HAS_KUBERNETES = False
 
-def create_or_update_namespace(iam, name=None):
-    """Retrieve the attributes of a server certificate if it exists or all certs.
-    Args:
-        iam (botocore.client.IAM): The boto3 iam instance.
 
-    Kwargs:
-        name (str): The name of the server certificate.
+def _read_namespace(namespace):
+    api = client.CoreV1Api()
+    api_namespace_response = api.read_namespace(name=namespace)
+    return api_namespace_response
 
-    Basic Usage:
+def _check_namespace_changed(api_namespace_response, labels):
+    if cmp(api_namespace_response.metadata.labels, labels) == 0:
+        return False
+    else:
+        return True
 
-        {
-            "upload_date": "2015-04-25T00:36:40+00:00",
-            "server_certificate_id": "ADWAJXWTZAXIPIMQHMJPO",
-            "certificate_body": "-----BEGIN CERTIFICATE-----\nbunch of random data\n-----END CERTIFICATE-----",
-            "server_certificate_name": "server-cert-name",
-            "expiration": "2017-06-15T12:00:00+00:00",
-            "path": "/",
-            "arn": "arn:aws:iam::911277865346:server-certificate/server-cert-name"
-        }
+def create_or_update_namespace(module):
+    """
+    creates or patches the k8s namespace object.
+
+    :param module:
+    :return: V1Namespace Dict returned from k8s API
     """
     results = dict()
+
+    namespace = module.params.get('namespace')
+    labels = module.params.get('labels')
+    api = client.CoreV1Api()
+
+
     try:
-        if name:
-            server_certs = [iam.get_server_certificate(ServerCertificateName=name)['ServerCertificate']]
+        api_namespace_response = _read_namespace(namespace)
+        if _check_namespace_changed(api_namespace_response, labels) :
+            try:
+                results = api.patch_namespace(client.V1Namespace(metadata=client.V1ObjectMeta(name=namespace, labels=labels)))
+                changed = True
+            except ApiException as e:
+                module.fail_json(msg="Unable to patch k8s Namespace: {0}".format(to_native(e)),
+                                 exception=traceback.format_exc())
         else:
-            server_certs = iam.list_server_certificates()['ServerCertificateMetadataList']
+            results = api_namespace_response
+            changed = False
 
-        for server_cert in server_certs:
-            if not name:
-                server_cert = iam.get_server_certificate(ServerCertificateName=server_cert['ServerCertificateName'])['ServerCertificate']
-            cert_md = server_cert['ServerCertificateMetadata']
-            results[cert_md['ServerCertificateName']] = {
-                'certificate_body': server_cert['CertificateBody'],
-                'server_certificate_id': cert_md['ServerCertificateId'],
-                'server_certificate_name': cert_md['ServerCertificateName'],
-                'arn': cert_md['Arn'],
-                'path': cert_md['Path'],
-                'expiration': cert_md['Expiration'].isoformat(),
-                'upload_date': cert_md['UploadDate'].isoformat(),
-            }
+    except ApiException as e:
+        if e.status != 404:
+            try:
+                results = api.create_namespace(client.V1Namespace(metadata=client.V1ObjectMeta(name=namespace, labels=labels)))
+                changed = True
+            except ApiException as e:
+                module.fail_json(msg="Unable to create k8s Namespace: {0}".format(to_native(e)),
+                                 exception=traceback.format_exc())
 
-    except botocore.exceptions.ClientError:
-        pass
+    return changed, results
 
-    return results
+
+def destroy_namespace(module):
+    """
+    Deletes the k8s namespace object.
+
+    :param module:
+    :return: V1Namespace Dict returned from k8s API
+    """
+    results = dict()
+    namespace = module.params.get('namespace')
+    api = client.CoreV1Api()
+    delete_options = client.V1DeleteOptions()
+
+    try:
+        api_namespace_response = _read_namespace(namespace)
+        try:
+            api.delete_namespace(name=namespace, body=delete_options, propagation_policy="")
+        except ApiException as e:
+            module.fail_json(msg="Unable to Delete k8s Namespace: {0}".format(to_native(e)),
+                             exception=traceback.format_exc())
+
+        results = api_namespace_response
+        changed = False
+
+    except ApiException as e:
+        if e.status != 404:
+           changed = False
+
+    return changed, results
 
 
 def main():
     module = AnsibleModule(
         argument_spec = dict(
-            namespace=dict(type='str'),
-            state=dict(type='str', default='present', choices=['absent', 'present', 'replace', 'update']),
-            label=dict(type='dict')
+            namespace=dict(type='str', required=True),
+            state=dict(type='str', default='present', choices=['absent', 'present']),
+            labels=dict(type='dict')
         )
     )
 
     if not HAS_KUBERNETES:
         module.fail_json(msg='kubernetes required for this module')
 
-    config.load_incluster_config()
+    config.load_kube_config()
 
     state = module.params.get("state")
 
     if state == 'present':
-        create_or_update_namespace(connection, module)
+        (changed, results) = create_or_update_namespace(module)
     else:
-        destroy_namespace(connection, module)
+        (changed, results) = destroy_namespace(module)
+
+    module.exit_json(changed=changed, result=results)
 
 
 if __name__ == '__main__':
