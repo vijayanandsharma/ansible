@@ -225,7 +225,7 @@ def create_or_update_namespace(module):
             changed = False
 
     except ApiException as e:
-        if e.status != 404:
+        if e.status == 404:
             try:
                 results = api.create_namespace(client.V1Namespace(metadata=client.V1ObjectMeta(name=namespace, labels=labels)))
                 changed = True

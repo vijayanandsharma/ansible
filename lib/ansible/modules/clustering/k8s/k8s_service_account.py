@@ -237,7 +237,7 @@ def create_or_update_service_account(module):
             changed = False
 
     except ApiException as e:
-        if e.status != 404:
+        if e.status == 404:
             try:
                 results = api.create_namespaced_service_account(
                     client.V1ServiceAccount(metadata=client.V1ObjectMeta(name=namespace, labels=labels)))
