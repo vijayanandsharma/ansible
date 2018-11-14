@@ -3,6 +3,7 @@
 # GNU General Public License v3.0+ (see COPYING or https://www.gnu.org/licenses/gpl-3.0.txt)
 
 from __future__ import absolute_import, division, print_function
+
 __metaclass__ = type
 
 import traceback
@@ -10,7 +11,6 @@ import traceback
 ANSIBLE_METADATA = {'metadata_version': '1.1',
                     'status': ['preview'],
                     'supported_by': 'community'}
-
 
 DOCUMENTATION = '''
 ---
@@ -45,6 +45,7 @@ EXAMPLES = '''
 
 RETURN = '''
 {'api_version': 'v1',
+
  'kind': 'Namespace',
  'metadata': {'annotations': None,
               'cluster_name': None,
@@ -70,6 +71,11 @@ api_version:
     returned: success
     type: str
     sample: "v1"
+automount_service_account_token:
+    description: APIVersion of versioned schema of the representation of an object.
+    returned: success
+    type: bool
+    sample: "True"
 kind:
     description: Kind is a string value representing the resource this object represents.
     returned: success
@@ -181,95 +187,104 @@ from kubernetes.client.rest import ApiException
 
 try:
     import kubernetes
+
     HAS_KUBERNETES = True
 except ImportError:
     HAS_KUBERNETES = False
 
 
-def _read_namespace(namespace):
+def _read_service_account(name, namespace):
     api = client.CoreV1Api()
-    api_namespace_response = api.read_namespace(name=namespace)
-    return api_namespace_response
+    api_service_account_response = api.read_namespaced_service_account(name=name, namespace=namespace)
+    return api_service_account_response
 
-def _check_namespace_changed(api_namespace_response, labels):
-    if cmp(api_namespace_response.metadata.labels, labels) == 0:
+
+def _check_service_account_changed(api_service_account_response, labels):
+    if cmp(api_service_account_response.metadata.labels, labels) == 0:
         return False
     else:
         return True
 
-def create_or_update_namespace(module):
+
+def create_or_update_service_account(module):
     """
-    creates or patches the k8s namespace object.
+    creates or patches the k8s ServiceAccount object.
 
     :param module:
-    :return: V1Namespace Dict returned from k8s API
+    :return: V1ServiceAccount Dict returned from k8s API
     """
     results = dict()
 
     namespace = module.params.get('namespace')
+    name = module.params.get('name')
     labels = module.params.get('labels')
     api = client.CoreV1Api()
 
-
     try:
-        api_namespace_response = _read_namespace(namespace)
-        if _check_namespace_changed(api_namespace_response, labels) :
+        api_service_account_response = _read_service_account(name, namespace)
+        if _check_service_account_changed(api_service_account_response, labels):
             try:
-                results = api.patch_namespace(client.V1Namespace(metadata=client.V1ObjectMeta(name=namespace, labels=labels)))
+                results = api.patch_namespaced_service_account(
+                    client.V1ServiceAccount(metadata=client.V1ObjectMeta(name=namespace, labels=labels)))
                 changed = True
             except ApiException as e:
-                module.fail_json(msg="Unable to patch k8s Namespace: {0}".format(to_native(e)),
+                module.fail_json(msg="Unable to patch k8s ServiceAccount: {0}".format(to_native(e)),
                                  exception=traceback.format_exc())
         else:
-            results = api_namespace_response
+            results = api_service_account_response
             changed = False
 
     except ApiException as e:
         if e.status != 404:
             try:
-                results = api.create_namespace(client.V1Namespace(metadata=client.V1ObjectMeta(name=namespace, labels=labels)))
+                results = api.create_namespaced_service_account(
+                    client.V1ServiceAccount(metadata=client.V1ObjectMeta(name=namespace, labels=labels)))
                 changed = True
             except ApiException as e:
-                module.fail_json(msg="Unable to create k8s Namespace: {0}".format(to_native(e)),
+                module.fail_json(msg="Unable to create k8s ServiceAccount: {0}".format(to_native(e)),
                                  exception=traceback.format_exc())
 
     return changed, results
 
 
-def destroy_namespace(module):
+def destroy_service_account(module):
     """
-    Deletes the k8s namespace object.
+    Deletes the k8s ServiceAccount object.
 
     :param module:
-    :return: V1Namespace Dict returned from k8s API
+    :return: V1ServiceAccount Dict returned from k8s API
     """
+
     results = dict()
     namespace = module.params.get('namespace')
+    name = module.params.get('name')
     api = client.CoreV1Api()
     delete_options = client.V1DeleteOptions(propagation_policy="Background")
 
     try:
-        api_namespace_response = _read_namespace(namespace)
+        api_service_account_response = _read_service_account(name, namespace)
         try:
-            api_namespace_response = api.delete_namespace(name=namespace, body=delete_options)
+            api_service_account_response = api.delete_namespaced_service_account(name=name, namespace=namespace,
+                                                                                 body=delete_options)
         except ApiException as e:
-            module.fail_json(msg="Unable to Delete k8s Namespace: {0}".format(to_native(e)),
+            module.fail_json(msg="Unable to Delete k8s ServiceAccount: {0}".format(to_native(e)),
                              exception=traceback.format_exc())
-        results = api_namespace_response
+        results = api_service_account_response
         changed = True
 
     except ApiException as e:
         results = e.body
         if e.status != 404:
-           changed = False
+            changed = False
 
     return changed, results
 
 
 def main():
     module = AnsibleModule(
-        argument_spec = dict(
+        argument_spec=dict(
             namespace=dict(type='str', required=True),
+            name=dict(type='str', required=True),
             state=dict(type='str', default='present', choices=['absent', 'present']),
             labels=dict(type='dict')
         )
@@ -283,9 +298,9 @@ def main():
     state = module.params.get("state")
 
     if state == 'present':
-        (changed, results) = create_or_update_namespace(module)
+        (changed, results) = create_or_update_service_account(module)
     else:
-        (changed, results) = destroy_namespace(module)
+        (changed, results) = destroy_service_account(module)
 
     module.exit_json(changed=changed, result=results)
 
