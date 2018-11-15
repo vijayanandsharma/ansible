@@ -15,9 +15,10 @@ ANSIBLE_METADATA = {'metadata_version': '1.1',
 DOCUMENTATION = '''
 ---
 module: k8s_namespace
-short_description: Manages namespace in Kubernetes Cluster
+short_description: Manages namespace Object in Kubernetes Cluster
 description:
-  - Retrieve the attributes of a server certificate
+  - Manages namespace Object in Kubernetes Cluster. This module also assumes that the api server is running in https://localhost.
+    It also assumes that the kube config file is available in the default location i.e. ~/.kube/config
 version_added: "2.8"
 author: "Vijayanand Sharma (@vijayanandsharma)"
 requirements: [kubernetes]
@@ -44,27 +45,6 @@ EXAMPLES = '''
 '''
 
 RETURN = '''
-{'api_version': 'v1',
- 'kind': 'Namespace',
- 'metadata': {'annotations': None,
-              'cluster_name': None,
-              'creation_timestamp': datetime.datetime(2018, 11, 13, 10, 5, 22, tzinfo=tzlocal()),
-              'deletion_grace_period_seconds': None,
-              'deletion_timestamp': None,
-              'finalizers': None,
-              'generate_name': None,
-              'generation': None,
-              'initializers': None,
-              'labels': None,
-              'name': 'development',
-              'namespace': None,
-              'owner_references': None,
-              'resource_version': '3874',
-              'self_link': '/api/v1/namespaces/development',
-              'uid': 'a251645e-e72b-11e8-a723-024238b6658b'},
- 'spec': {'finalizers': ['kubernetes']},
- 'status': {'phase': 'Active'}}
-
 api_version:
     description: APIVersion of versioned schema of the representation of an object.
     returned: success
