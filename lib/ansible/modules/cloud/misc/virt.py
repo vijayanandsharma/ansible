@@ -25,7 +25,7 @@ options:
     description:
       - name of the guest VM being managed. Note that VM must be previously
         defined with xml.
-    required: true
+      - This option is required unless I(command) is C(list_vms).
   state:
     description:
       - Note that there may be some lag for state requests like C(shutdown)
@@ -89,7 +89,7 @@ RETURN = '''
 # for list_vms command
 list_vms:
     description: The list of vms defined on the remote system
-    type: dictionary
+    type: list
     returned: success
     sample: [
         "build.example.org",

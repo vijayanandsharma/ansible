@@ -22,6 +22,7 @@ __metaclass__ = type
 import time
 from datetime import datetime, timedelta
 
+from ansible.module_utils._text import to_text
 from ansible.plugins.action import ActionBase
 
 try:
@@ -37,6 +38,7 @@ class TimedOutException(Exception):
 
 class ActionModule(ActionBase):
     TRANSFERS_FILES = False
+    _VALID_ARGS = frozenset(('connect_timeout', 'delay', 'sleep', 'timeout'))
 
     DEFAULT_CONNECT_TIMEOUT = 5
     DEFAULT_DELAY = 0
@@ -82,7 +84,7 @@ class ActionModule(ActionBase):
             display.vvv("wait_for_connection: attempting ping module test")
             # call connection reset between runs if it's there
             try:
-                self._connection._reset()
+                self._connection.reset()
             except AttributeError:
                 pass
 
@@ -111,7 +113,7 @@ class ActionModule(ActionBase):
 
         except TimedOutException as e:
             result['failed'] = True
-            result['msg'] = str(e)
+            result['msg'] = to_text(e)
 
         elapsed = datetime.now() - start
         result['elapsed'] = elapsed.seconds

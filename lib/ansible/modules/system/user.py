@@ -22,6 +22,15 @@ notes:
     they generally come pre-installed with the system and Ansible will require they
     are present at runtime. If they are not, a descriptive error message will be shown.
   - For Windows targets, use the M(win_user) module instead.
+  - On SunOS platforms, the shadow file is backed up automatically since this module edits it directly.
+    On other platforms, the shadow file is backed up by the underlying tools used by this module.
+  - On macOS, this module uses C(dscl) to create, modify, and delete accounts. C(dseditgroup) is used to
+    modify group membership. Accounts are hidden from the login window by modifying
+    C(/Library/Preferences/com.apple.loginwindow.plist).
+  - On FreeBSD, this module uses C(pw useradd) and C(chpass) to create, C(pw usermod) and C(chpass) to modify,
+    C(pw userdel) remove, C(pw lock) to lock, and C(pw unlock) to unlock accounts.
+  - On all other platforms, this module uses C(useradd) to create, C(usermod) to modify, and
+    C(userdel) to remove accounts.
 description:
     - Manage user accounts and user attributes.
     - For Windows targets, use the M(win_user) module instead.
@@ -76,6 +85,8 @@ options:
             - Optionally set the user's shell.
             - On macOS, before version 2.5, the default shell for non-system users was /usr/bin/false.
               Since 2.5, the default shell for non-system users on macOS is /bin/bash.
+            - On other operating systems, the default shell is determined by the underlying tool being
+              used. See Notes for details.
     home:
         description:
             - Optionally set the user's home directory.
@@ -87,6 +98,7 @@ options:
         description:
             - Optionally set the user's password to this crypted value.
             - On macOS systems, this value has to be cleartext. Beware of security issues.
+            - To create a disabled account or Linux systems, set this to C('!') or C('*').
             - See U(https://docs.ansible.com/ansible/faq.html#how-do-i-generate-crypted-passwords-for-the-user-module)
               for details on various ways to generate these password values.
     state:
@@ -182,7 +194,7 @@ options:
             - Lock the password (usermod -L, pw lock, usermod -C).
               BUT implementation differs on different platforms, this option does not always mean the user cannot login via other methods.
               This option does not disable the user, only lock the password. Do not change the password in the same task.
-              Currently supported on Linux, FreeBSD, DragonFlyBSD, NetBSD.
+              Currently supported on Linux, FreeBSD, DragonFlyBSD, NetBSD, OpenBSD.
         type: bool
         version_added: "2.6"
     local:
@@ -342,13 +354,17 @@ uid:
 import errno
 import grp
 import os
+import re
 import platform
+import pty
 import pwd
+import select
 import shutil
 import socket
+import subprocess
 import time
 
-from ansible.module_utils._text import to_native
+from ansible.module_utils._text import to_native, to_bytes, to_text
 from ansible.module_utils.basic import load_platform_subclass, AnsibleModule
 
 try:
@@ -356,6 +372,9 @@ try:
     HAVE_SPWD = True
 except ImportError:
     HAVE_SPWD = False
+
+
+_HASH_RE = re.compile(r'[^a-zA-Z0-9./=]')
 
 
 class User(object):
@@ -429,6 +448,42 @@ class User(object):
         else:
             self.ssh_file = os.path.join('.ssh', 'id_%s' % self.ssh_type)
 
+    def check_password_encrypted(self):
+        # Darwin needs cleartext password, so skip validation
+        if self.module.params['password'] and self.platform != 'Darwin':
+            maybe_invalid = False
+
+            # Allow setting the password to * or ! in order to disable the account
+            if self.module.params['password'] in set(['*', '!']):
+                maybe_invalid = False
+            else:
+                # : for delimiter, * for disable user, ! for lock user
+                # these characters are invalid in the password
+                if any(char in self.module.params['password'] for char in ':*!'):
+                    maybe_invalid = True
+                if '$' not in self.module.params['password']:
+                    maybe_invalid = True
+                else:
+                    fields = self.module.params['password'].split("$")
+                    if len(fields) >= 3:
+                        # contains character outside the crypto constraint
+                        if bool(_HASH_RE.search(fields[-1])):
+                            maybe_invalid = True
+                        # md5
+                        if fields[1] == '1' and len(fields[-1]) != 22:
+                            maybe_invalid = True
+                        # sha256
+                        if fields[1] == '5' and len(fields[-1]) != 43:
+                            maybe_invalid = True
+                        # sha512
+                        if fields[1] == '6' and len(fields[-1]) != 86:
+                            maybe_invalid = True
+                    else:
+                        maybe_invalid = True
+            if maybe_invalid:
+                self.module.warn("The input password appears not to have been hashed. "
+                                 "The 'password' argument must be encrypted for this module to work properly.")
+
     def execute_command(self, cmd, use_unsafe_shell=False, data=None, obey_checkmode=True):
         if self.module.check_mode and obey_checkmode:
             self.module.debug('In check mode, would have run: "%s"' % cmd)
@@ -437,6 +492,10 @@ class User(object):
             # cast all args to strings ansible-modules-core/issues/4397
             cmd = [str(x) for x in cmd]
             return self.module.run_command(cmd, use_unsafe_shell=use_unsafe_shell, data=data)
+
+    def backup_shadow(self):
+        if not self.module.check_mode and self.SHADOWFILE:
+            return self.module.backup_local(self.SHADOWFILE)
 
     def remove_user_userdel(self):
         if self.local:
@@ -518,7 +577,10 @@ class User(object):
 
         if self.expires is not None:
             cmd.append('-e')
-            cmd.append(time.strftime(self.DATE_FORMAT, self.expires))
+            if self.expires < time.gmtime(0):
+                cmd.append('')
+            else:
+                cmd.append(time.strftime(self.DATE_FORMAT, self.expires))
 
         if self.password is not None:
             cmd.append('-p')
@@ -644,7 +706,7 @@ class User(object):
             current_expires = int(self.user_password()[1])
 
             if self.expires < time.gmtime(0):
-                if current_expires > 0:
+                if current_expires >= 0:
                     cmd.append('-e')
                     cmd.append('')
             else:
@@ -652,13 +714,15 @@ class User(object):
                 current_expire_date = time.gmtime(current_expires * 86400)
 
                 # Current expires is negative or we compare year, month, and day only
-                if current_expires <= 0 or current_expire_date[:3] != self.expires[:3]:
+                if current_expires < 0 or current_expire_date[:3] != self.expires[:3]:
                     cmd.append('-e')
                     cmd.append(time.strftime(self.DATE_FORMAT, self.expires))
 
-        if self.password_lock:
+        # Lock if no password or unlocked, unlock only if locked
+        if self.password_lock and not info[1].startswith('!'):
             cmd.append('-L')
-        elif self.password_lock is not None:
+        elif self.password_lock is False and info[1].startswith('!'):
+            # usermod will refuse to unlock a user with no password, module shows 'changed' regardless
             cmd.append('-U')
 
         if self.update_password == 'always' and self.password is not None and info[1] != self.password:
@@ -806,13 +870,58 @@ class User(object):
         cmd.append(self.ssh_comment)
         cmd.append('-f')
         cmd.append(ssh_key_file)
-        cmd.append('-N')
         if self.ssh_passphrase is not None:
-            cmd.append(self.ssh_passphrase)
+            if self.module.check_mode:
+                self.module.debug('In check mode, would have run: "%s"' % cmd)
+                return (0, '', '')
+
+            master_in_fd, slave_in_fd = pty.openpty()
+            master_out_fd, slave_out_fd = pty.openpty()
+            master_err_fd, slave_err_fd = pty.openpty()
+            env = os.environ.copy()
+            env['LC_ALL'] = 'C'
+            try:
+                p = subprocess.Popen([to_bytes(c) for c in cmd],
+                                     stdin=slave_in_fd,
+                                     stdout=slave_out_fd,
+                                     stderr=slave_err_fd,
+                                     preexec_fn=os.setsid,
+                                     env=env)
+                out_buffer = b''
+                err_buffer = b''
+                while p.poll() is None:
+                    r, w, e = select.select([master_out_fd, master_err_fd], [], [], 1)
+                    first_prompt = b'Enter passphrase (empty for no passphrase):'
+                    second_prompt = b'Enter same passphrase again'
+                    prompt = first_prompt
+                    for fd in r:
+                        if fd == master_out_fd:
+                            chunk = os.read(master_out_fd, 10240)
+                            out_buffer += chunk
+                            if prompt in out_buffer:
+                                os.write(master_in_fd, to_bytes(self.ssh_passphrase, errors='strict') + b'\r')
+                                prompt = second_prompt
+                        else:
+                            chunk = os.read(master_err_fd, 10240)
+                            err_buffer += chunk
+                            if prompt in err_buffer:
+                                os.write(master_in_fd, to_bytes(self.ssh_passphrase, errors='strict') + b'\r')
+                                prompt = second_prompt
+                        if b'Overwrite (y/n)?' in out_buffer or b'Overwrite (y/n)?' in err_buffer:
+                            # The key was created between us checking for existence and now
+                            return (None, 'Key already exists', '')
+
+                rc = p.returncode
+                out = to_native(out_buffer)
+                err = to_native(err_buffer)
+            except OSError as e:
+                return (1, '', to_native(e))
         else:
+            cmd.append('-N')
             cmd.append('')
 
-        (rc, out, err) = self.execute_command(cmd)
+            (rc, out, err) = self.execute_command(cmd)
+
         if rc == 0 and not self.module.check_mode:
             # If the keys were successfully created, we should be able
             # to tweak ownership.
@@ -966,7 +1075,10 @@ class FreeBsdUser(User):
 
         if self.expires is not None:
             cmd.append('-e')
-            cmd.append(time.strftime(self.DATE_FORMAT, self.expires))
+            if self.expires < time.gmtime(0):
+                cmd.append('0')
+            else:
+                cmd.append(time.strftime(self.DATE_FORMAT, self.expires))
 
         # system cannot be handled currently - should we error if its requested?
         # create the user
@@ -1008,10 +1120,11 @@ class FreeBsdUser(User):
             cmd.append(self.comment)
 
         if self.home is not None:
-            if (info[5] != self.home and self.move_home) or (not os.path.exists(self.home) and self.createhome):
+            if (info[5] != self.home and self.move_home) or (not os.path.exists(self.home) and self.create_home):
                 cmd.append('-m')
-            cmd.append('-d')
-            cmd.append(self.home)
+            if info[5] != self.home:
+                cmd.append('-d')
+                cmd.append(self.home)
 
             if self.skeleton is not None:
                 cmd.append('-k')
@@ -1069,7 +1182,9 @@ class FreeBsdUser(User):
 
             current_expires = int(self.user_password()[1])
 
-            if self.expires < time.gmtime(0):
+            # If expiration is negative or zero and the current expiration is greater than zero, disable expiration.
+            # In OpenBSD, setting expiration to zero disables expiration. It does not expire the account.
+            if self.expires <= time.gmtime(0):
                 if current_expires > 0:
                     cmd.append('-e')
                     cmd.append('0')
@@ -1101,22 +1216,20 @@ class FreeBsdUser(User):
             return self.execute_command(cmd)
 
         # we have to lock/unlock the password in a distinct command
-        if self.password_lock:
+        if self.password_lock and not info[1].startswith('*LOCKED*'):
             cmd = [
                 self.module.get_bin_path('pw', True),
                 'lock',
-                '-n',
                 self.name
             ]
             if self.uid is not None and info[2] != int(self.uid):
                 cmd.append('-u')
                 cmd.append(self.uid)
             return self.execute_command(cmd)
-        elif self.password_lock is not None:
+        elif self.password_lock is False and info[1].startswith('*LOCKED*'):
             cmd = [
                 self.module.get_bin_path('pw', True),
                 'unlock',
-                '-n',
                 self.name
             ]
             if self.uid is not None and info[2] != int(self.uid):
@@ -1289,6 +1402,11 @@ class OpenBSDUser(User):
                 cmd.append('-L')
                 cmd.append(self.login_class)
 
+        if self.password_lock and not info[1].startswith('*'):
+            cmd.append('-Z')
+        elif self.password_lock is False and info[1].startswith('*'):
+            cmd.append('-U')
+
         if self.update_password == 'always' and self.password is not None \
                 and self.password != '*' and info[1] != self.password:
             cmd.append('-p')
@@ -1449,9 +1567,9 @@ class NetBSDUser(User):
             cmd.append('-p')
             cmd.append(self.password)
 
-        if self.password_lock:
+        if self.password_lock and not info[1].startswith('*LOCKED*'):
             cmd.append('-C yes')
-        elif self.password_lock is not None:
+        elif self.password_lock is False and info[1].startswith('*LOCKED*'):
             cmd.append('-C no')
 
         # skip if no changes to be made
@@ -1489,6 +1607,9 @@ class SunOS(User):
                 line = line.strip()
                 if (line.startswith('#') or line == ''):
                     continue
+                m = re.match(r'^([^#]*)#(.*)$', line)
+                if m:  # The line contains a hash / comment
+                    line = m.group(1)
                 key, value = line.split('=')
                 if key == "MINWEEKS":
                     minweeks = value.rstrip('\n')
@@ -1558,6 +1679,7 @@ class SunOS(User):
         if not self.module.check_mode:
             # we have to set the password by editing the /etc/shadow file
             if self.password is not None:
+                self.backup_shadow()
                 minweeks, maxweeks, warnweeks = self.get_password_defaults()
                 try:
                     lines = []
@@ -1662,6 +1784,7 @@ class SunOS(User):
 
         # we have to set the password by editing the /etc/shadow file
         if self.update_password == 'always' and self.password is not None and info[1] != self.password:
+            self.backup_shadow()
             (rc, out, err) = (0, '', '')
             if not self.module.check_mode:
                 minweeks, maxweeks, warnweeks = self.get_password_defaults()
@@ -2391,6 +2514,7 @@ def main():
     )
 
     user = User(module)
+    user.check_password_encrypted()
 
     module.debug('User instantiated - platform %s' % user.platform)
     if user.distribution:

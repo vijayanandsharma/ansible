@@ -104,7 +104,7 @@ def main():
     )
 
     if not HAS_ZABBIX_API:
-        module.fail_json(msg="Missing requried zabbix-api module (check docs or install with: pip install zabbix-api)")
+        module.fail_json(msg="Missing required zabbix-api module (check docs or install with: pip install zabbix-api)")
 
     server_url = module.params['server_url']
     login_user = module.params['login_user']
@@ -127,6 +127,7 @@ def main():
     host = Host(module, zbx)
     host_groups = host.get_group_ids_by_group_names(hostgroup_name)
     module.exit_json(host_groups=host_groups)
+
 
 if __name__ == '__main__':
     main()

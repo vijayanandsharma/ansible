@@ -34,7 +34,7 @@ notes:
     - Tested against the following platforms and images
       - N9k 7.0(3)I4(6), 7.0(3)I5(3), 7.0(3)I6(1), 7.0(3)I7(1), 7.0(3)F2(2), 7.0(3)F3(2)
       - N3k 6.0(2)A8(6), 6.0(2)A8(8), 7.0(3)I6(1), 7.0(3)I7(1)
-      - N7k 7.3(0)D1(1), 8.0(1), 8.2(1)
+      - N7k 7.3(0)D1(1), 8.0(1), 8.1(1), 8.2(1)
     - This module requires both the ANSIBLE_PERSISTENT_CONNECT_TIMEOUT and
       ANSIBLE_PERSISTENT_COMMAND_TIMEOUT timers to be set to 600 seconds or higher.
       The module will exit if the timers are not set properly.
@@ -61,7 +61,7 @@ options:
         version_added: "2.5"
         description:
             - Upgrade using In Service Software Upgrade (ISSU).
-              (Only supported on N9k platforms)
+              (Supported on N5k, N7k, N9k platforms)
             - Selecting 'required' or 'yes' means that upgrades will only
               proceed if the switch is capable of ISSU.
             - Selecting 'desired' means that upgrades will use ISSU if possible
@@ -235,7 +235,7 @@ def parse_show_install(data):
             break
 
         # Check for potentially transient conditions
-        if re.search(r'Another install procedure may be in progress', x):
+        if re.search(r'Another install procedure may\s*be in progress', x):
             ud['install_in_progress'] = True
             break
         if re.search(r'Backend processing error', x):
@@ -345,12 +345,32 @@ def massage_install_data(data):
 
 def build_install_cmd_set(issu, image, kick, type):
     commands = ['terminal dont-ask']
+
+    # Different NX-OS plaforms behave differently for
+    # disruptive and non-disruptive upgrade paths.
+    #
+    # 1) Combined kickstart/system image:
+    #    * Use option 'non-disruptive' for issu.
+    #    * Omit option non-disruptive' for distruptive upgrades.
+    # 2) Separate kickstart + system images.
+    #    * Omit hidden 'force' option for issu.
+    #    * Use hidden 'force' option for disruptive upgrades.
     if re.search(r'required|desired|yes', issu):
-        issu_cmd = 'non-disruptive'
+        if kick is None:
+            issu_cmd = 'non-disruptive'
+        else:
+            issu_cmd = ''
     else:
-        issu_cmd = ''
+        if kick is None:
+            issu_cmd = ''
+        else:
+            issu_cmd = 'force'
+
     if type == 'impact':
         rootcmd = 'show install all impact'
+        # The force option is not available for the impact command.
+        if kick:
+            issu_cmd = ''
     else:
         rootcmd = 'install all'
     if kick is None:
@@ -358,7 +378,7 @@ def build_install_cmd_set(issu, image, kick, type):
             '%s nxos %s %s' % (rootcmd, image, issu_cmd))
     else:
         commands.append(
-            '%s system %s kickstart %s' % (rootcmd, image, kick))
+            '%s %s system %s kickstart %s' % (rootcmd, issu_cmd, image, kick))
 
     return commands
 
@@ -474,8 +494,14 @@ def do_install_all(module, issu, image, kick=None):
         # needs to be upgraded.
         if impact_data['disruptive']:
             # Check mode indicated that ISSU is not possible so issue the
-            # upgrade command without the non-disruptive flag.
-            issu = 'no'
+            # upgrade command without the non-disruptive flag unless the
+            # playbook specified issu: yes/required.
+            if issu == 'yes':
+                msg = 'ISSU/ISSD requested but impact data indicates ISSU/ISSD is not possible'
+                module.fail_json(msg=msg, raw_data=impact_data['list_data'])
+            else:
+                issu = 'no'
+
         commands = build_install_cmd_set(issu, image, kick, 'install')
         opts = {'ignore_timeout': True}
         # The system may be busy from the call to check_mode so loop until
@@ -523,6 +549,9 @@ def main():
     sif = module.params['system_image_file']
     kif = module.params['kickstart_image_file']
     issu = module.params['issu']
+
+    if re.search(r'(yes|required)', issu):
+        issu = 'yes'
 
     if kif == 'null' or kif == '':
         kif = None

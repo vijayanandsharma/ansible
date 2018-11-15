@@ -521,11 +521,11 @@ class SelfSignedCertificate(Certificate):
             cert = crypto.X509()
             cert.set_serial_number(self.serial_number)
             if self.notBefore:
-                cert.set_notBefore(self.notBefore)
+                cert.set_notBefore(to_bytes(self.notBefore))
             else:
                 cert.gmtime_adj_notBefore(0)
             if self.notAfter:
-                cert.set_notAfter(self.notAfter)
+                cert.set_notAfter(to_bytes(self.notAfter))
             else:
                 # If no NotAfter specified, expire in
                 # 10 years. 315360000 is 10 years in seconds.
@@ -618,11 +618,11 @@ class OwnCACertificate(Certificate):
             cert = crypto.X509()
             cert.set_serial_number(self.serial_number)
             if self.notBefore:
-                cert.set_notBefore(self.notBefore.encode())
+                cert.set_notBefore(to_bytes(self.notBefore))
             else:
                 cert.gmtime_adj_notBefore(0)
             if self.notAfter:
-                cert.set_notAfter(self.notAfter.encode())
+                cert.set_notAfter(to_bytes(self.notAfter))
             else:
                 # If no NotAfter specified, expire in
                 # 10 years. 315360000 is 10 years in seconds.
@@ -1037,6 +1037,9 @@ def main():
             getattr(crypto.X509Req, 'get_extensions')
         except AttributeError:
             module.fail_json(msg='You need to have PyOpenSSL>=0.15')
+
+    if module.params['provider'] != 'assertonly' and module.params['csr_path'] is None:
+        module.fail_json(msg='csr_path is required when provider is not assertonly')
 
     base_dir = os.path.dirname(module.params['path'])
     if not os.path.isdir(base_dir):

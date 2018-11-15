@@ -25,6 +25,7 @@ options:
     description:
       - Name of the volume to operate on.
     required: true
+    type: dict
     aliases:
       - volume_name
 
@@ -32,15 +33,18 @@ options:
     description:
       - Specify the type of volume. Docker provides the C(local) driver, but 3rd party drivers can also be used.
     default: local
+    type: str
 
   driver_options:
     description:
       - "Dictionary of volume settings. Consult docker docs for valid options and values:
         U(https://docs.docker.com/engine/reference/commandline/volume_create/#driver-specific-options)"
+    type: dict
 
   labels:
     description:
-      - List of labels to set for the volume
+      - Dictionary of label key/values to set for the volume
+    type: dict
 
   force:
     description:
@@ -68,6 +72,14 @@ author:
 requirements:
     - "python >= 2.6"
     - "docker-py >= 1.10.0"
+    - "Please note that the L(docker-py,https://pypi.org/project/docker-py/) Python
+       module has been superseded by L(docker,https://pypi.org/project/docker/)
+       (see L(here,https://github.com/docker/docker-py/issues/1310) for details).
+       For Python 2.6, C(docker-py) must be used. Otherwise, it is recommended to
+       install the C(docker) Python module. Note that both modules should I(not)
+       be installed at the same time. Also note that when both modules are installed
+       and one of them is uninstalled, the other might no longer function and a
+       reinstall of it is required."
     - "The docker server >= 1.9.0"
 '''
 
@@ -100,7 +112,7 @@ facts:
 try:
     from docker.errors import APIError
 except ImportError:
-    # missing docker-py handled in ansible.module_utils.docker
+    # missing docker-py handled in ansible.module_utils.docker_common
     pass
 
 from ansible.module_utils.docker_common import DockerBaseClass, AnsibleDockerClient
@@ -177,8 +189,7 @@ class DockerVolumeManager(object):
                         differences.append('driver_options.%s' % key)
         if self.parameters.labels:
             existing_labels = self.existing_volume.get('Labels', {})
-            all_labels = set(self.parameters.labels) | set(existing_labels)
-            for label in all_labels:
+            for label in self.parameters.labels:
                 if existing_labels.get(label) != self.parameters.labels.get(label):
                     differences.append('labels.%s' % label)
 
@@ -215,7 +226,7 @@ class DockerVolumeManager(object):
         if self.existing_volume:
             differences = self.has_different_config()
 
-        if differences and self.parameters.force:
+        if differences or self.parameters.force:
             self.remove_volume()
             self.existing_volume = None
 
@@ -239,14 +250,16 @@ def main():
         state=dict(type='str', default='present', choices=['present', 'absent']),
         driver=dict(type='str', default='local'),
         driver_options=dict(type='dict', default={}),
-        labels=dict(type='list'),
+        labels=dict(type='dict'),
         force=dict(type='bool', default=False),
         debug=dict(type='bool', default=False)
     )
 
     client = AnsibleDockerClient(
         argument_spec=argument_spec,
-        supports_check_mode=True
+        supports_check_mode=True,
+        min_docker_version='1.10.0',
+        # "The docker server >= 1.9.0"
     )
 
     cm = DockerVolumeManager(client)
