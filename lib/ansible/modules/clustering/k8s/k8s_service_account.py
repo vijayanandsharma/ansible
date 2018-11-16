@@ -14,7 +14,7 @@ ANSIBLE_METADATA = {'metadata_version': '1.1',
 
 DOCUMENTATION = '''
 ---
-module: k8s_namespace
+module: k8s_service_account
 short_description: Manages ServiceAccount Object in Kubernetes Cluster
 description:
   - - Manages ServiceAccount Object in Kubernetes Cluster. This module also assumes that the api server is running in https://localhost.
@@ -31,15 +31,27 @@ options:
 
 EXAMPLES = '''
 # Create Kubernetes namespace Cluster
-- k8s_namespace:
+- k8s_service_account:
+    name: svc-admin-development
     namespace: development
+    state: present
+  
+- k8s_service_account:
+    name: svc-admin-development
+    namespace: development
+    image_pull_secrets:
+      - development_secret_from_image
+    secrets:
+      - username
+      - password
     state: present
     labels:
       key: value
   register: dev_namespace
 
 # Delete Kubernetes namespace Cluster
-- k8s_namespace:
+- k8s_service_account:
+    name: svc-admin-development
     namespace: development
     state: absent
 '''
@@ -179,12 +191,44 @@ def _read_service_account(name, namespace):
 
 
 def _check_service_account_changed(api_service_account_response, module):
-    if (cmp(api_service_account_response.metadata.labels, module.params.get('labels')) == 0) and \
-            (cmp(api_service_account_response.secrets, module.params.get('secrets')) == 0) and \
-            (cmp(api_service_account_response.image_pull_secrets, module.params.get('image_pull_secrets')) == 0):
-        return False
+    changed = False
+
+    label_key_value_pairs_to_set = {}
+    label_keys_to_unset = []
+
+    new_labels = module.params.get("labels")
+    current_labels = api_service_account_response.metadata.labels
+
+    for key in current_labels.keys():
+        if key not in new_labels:
+            label_keys_to_unset.append(key)
+
+    for key in set(new_labels.keys()) - set(label_keys_to_unset):
+        if to_text(new_labels[key]) != current_labels.get(key):
+            label_key_value_pairs_to_set[key] = new_labels[key]
+
+    if label_key_value_pairs_to_set or label_keys_to_unset:
+        return True
+
+    secrets_list = []
+    for secrets in api_service_account_response.secrets:
+        secrets_list.append(secrets['name'])
+
+    if set(secrets_list) == set(module.params.get('secrets')):
+        changed = False
     else:
         return True
+
+    pull_secrets_list = []
+    for pull_secrets in api_service_account_response.image_pull_secrets:
+        pull_secrets_list.append(pull_secrets['name'])
+
+    if set(pull_secrets_list) == set(module.params.get('image_pull_secrets')):
+        changed = False
+    else:
+        return True
+
+    return changed
 
 
 def create_or_update_service_account(module):
@@ -267,7 +311,7 @@ def main():
             namespace=dict(type='str', required=True),
             name=dict(type='str', required=True),
             image_pull_secrets=dict(type='list', aliases=['pull_secrets']),
-            secrets=dict(type='dict'),
+            secrets=dict(type='list'),
             state=dict(type='str', default='present', choices=['absent', 'present']),
             labels=dict(type='dict')
         )

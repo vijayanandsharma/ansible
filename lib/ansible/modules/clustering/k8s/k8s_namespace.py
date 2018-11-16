@@ -3,6 +3,7 @@
 # GNU General Public License v3.0+ (see COPYING or https://www.gnu.org/licenses/gpl-3.0.txt)
 
 from __future__ import absolute_import, division, print_function
+
 __metaclass__ = type
 
 import traceback
@@ -10,7 +11,6 @@ import traceback
 ANSIBLE_METADATA = {'metadata_version': '1.1',
                     'status': ['preview'],
                     'supported_by': 'community'}
-
 
 DOCUMENTATION = '''
 ---
@@ -161,6 +161,7 @@ from kubernetes.client.rest import ApiException
 
 try:
     import kubernetes
+
     HAS_KUBERNETES = True
 except ImportError:
     HAS_KUBERNETES = False
@@ -171,11 +172,27 @@ def _read_namespace(namespace):
     api_namespace_response = api.read_namespace(name=namespace)
     return api_namespace_response
 
-def _check_namespace_changed(api_namespace_response, labels):
-    if cmp(api_namespace_response.metadata.labels, labels) == 0:
-        return False
+
+def _check_namespace_changed(api_namespace_response, module):
+    label_key_value_pairs_to_set = {}
+    label_keys_to_unset = []
+
+    new_labels = module.params.get("labels")
+    current_labels = api_namespace_response.metadata.labels
+
+    for key in current_labels.keys():
+        if key not in new_labels:
+            label_keys_to_unset.append(key)
+
+    for key in set(new_labels.keys()) - set(label_keys_to_unset):
+        if to_text(new_labels[key]) != current_labels.get(key):
+            label_key_value_pairs_to_set[key] = new_labels[key]
+
+    if label_key_value_pairs_to_set or label_keys_to_unset:
+        return True
     else:
         return True
+
 
 def create_or_update_namespace(module):
     """
@@ -190,12 +207,12 @@ def create_or_update_namespace(module):
     labels = module.params.get('labels')
     api = client.CoreV1Api()
 
-
     try:
         api_namespace_response = _read_namespace(namespace)
-        if _check_namespace_changed(api_namespace_response, labels) :
+        if _check_namespace_changed(api_namespace_response, module):
             try:
-                results = api.patch_namespace(client.V1Namespace(metadata=client.V1ObjectMeta(name=namespace, labels=labels)))
+                results = api.patch_namespace(
+                    client.V1Namespace(metadata=client.V1ObjectMeta(name=namespace, labels=labels)))
                 changed = True
             except ApiException as e:
                 module.fail_json(msg="Unable to patch k8s Namespace: {0}".format(to_native(e)),
@@ -207,7 +224,8 @@ def create_or_update_namespace(module):
     except ApiException as e:
         if e.status == 404:
             try:
-                results = api.create_namespace(client.V1Namespace(metadata=client.V1ObjectMeta(name=namespace, labels=labels)))
+                results = api.create_namespace(
+                    client.V1Namespace(metadata=client.V1ObjectMeta(name=namespace, labels=labels)))
                 changed = True
             except ApiException as e:
                 module.fail_json(msg="Unable to create k8s Namespace: {0}".format(to_native(e)),
@@ -241,14 +259,14 @@ def destroy_namespace(module):
     except ApiException as e:
         results = e.body
         if e.status != 404:
-           changed = False
+            changed = False
 
     return changed, results
 
 
 def main():
     module = AnsibleModule(
-        argument_spec = dict(
+        argument_spec=dict(
             namespace=dict(type='str', required=True),
             state=dict(type='str', default='present', choices=['absent', 'present']),
             labels=dict(type='dict')
