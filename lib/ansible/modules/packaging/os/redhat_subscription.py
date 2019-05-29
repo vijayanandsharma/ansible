@@ -260,9 +260,9 @@ class RegistrationBase(object):
             cfg.read([tmpfile])
 
             if enabled:
-                cfg.set('main', 'enabled', 1)
+                cfg.set('main', 'enabled', '1')
             else:
-                cfg.set('main', 'enabled', 0)
+                cfg.set('main', 'enabled', '0')
 
             fd = open(tmpfile, 'w+')
             cfg.write(fd)
@@ -348,6 +348,15 @@ class Rhsm(RegistrationBase):
         if org_id:
             args.extend(['--org', org_id])
 
+        if server_proxy_hostname and server_proxy_port:
+            args.extend(['--proxy', server_proxy_hostname + ':' + server_proxy_port])
+
+        if server_proxy_user:
+            args.extend(['--proxyuser', server_proxy_user])
+
+        if server_proxy_password:
+            args.extend(['--proxypassword', server_proxy_password])
+
         if activationkey:
             args.extend(['--activationkey', activationkey])
         else:
@@ -365,17 +374,11 @@ class Rhsm(RegistrationBase):
                 args.extend(['--consumerid', consumer_id])
             if environment:
                 args.extend(['--environment', environment])
-            if server_proxy_hostname and server_proxy_port:
-                args.extend(['--proxy', server_proxy_hostname + ':' + server_proxy_port])
-            if server_proxy_user:
-                args.extend(['--proxyuser', server_proxy_user])
-            if server_proxy_password:
-                args.extend(['--proxypassword', server_proxy_password])
 
         if release:
             args.extend(['--release', release])
 
-        rc, stderr, stdout = self.module.run_command(args, check_rc=True)
+        rc, stderr, stdout = self.module.run_command(args, check_rc=True, expand_user_and_vars=False)
 
     def unsubscribe(self, serials=None):
         '''

@@ -59,8 +59,7 @@ To match strings against a substring or a regular expression, use the "match", "
             msg: "matched pattern 4"
           when: url is regex("example.com/\w+/foo")
 
-'match' requires a complete match in the string, while 'search' only requires matching a subset of the string.
-
+'match' requires zero or more characters at the beginning of the string, while 'search' only requires matching a subset of the string. By default, 'regex' works like `search`, but `regex` can be configured to perform other tests as well. 
 
 .. _testing_versions:
 
@@ -84,8 +83,7 @@ The ``version`` test accepts the following operators::
 
     <, lt, <=, le, >, gt, >=, ge, ==, =, eq, !=, <>, ne
 
-This test also accepts a 3rd parameter, ``strict`` which defines if strict version parsing should
-be used.  The default is ``False``, but this setting as ``True`` uses more strict version parsing::
+This test also accepts a 3rd parameter, ``strict`` which defines if strict version parsing as defined by ``distutils.version.StrictVersion`` should be used.  The default is ``False`` (using ``distutils.version.LooseVersion``), ``True`` enables strict version parsing::
 
     {{ sample_version_var is version('1.0', operator='lt', strict=True) }}
 
@@ -200,7 +198,7 @@ The following tests can provide information about a path on the controller::
     - debug:
         msg: "path is {{ (mypath is abs)|ternary('absolute','relative')}}"
 
-    - debug: 
+    - debug:
         msg: "path is the same file as path2"
       when: mypath is same_file(path2)
 
@@ -267,5 +265,3 @@ The following tasks are illustrative of the tests meant to check the status of t
        Have a question?  Stop by the google group!
    `irc.freenode.net <http://irc.freenode.net>`_
        #ansible IRC chat channel
-
-

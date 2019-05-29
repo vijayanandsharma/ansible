@@ -23,7 +23,7 @@ description:
     - This module can be used to add and remove custom attributes definitions for the given virtual machine from VMWare.
 version_added: 2.7
 author:
-    - Jimmy Conner
+    - Jimmy Conner (@cigamit)
     - Abhijeet Kasurde (@Akasurde)
 notes:
     - Tested on vSphere 6.5
@@ -91,13 +91,12 @@ except ImportError:
 class VmAttributeDefManager(PyVmomi):
     def __init__(self, module):
         super(VmAttributeDefManager, self).__init__(module)
-        self.custom_field_mgr = self.content.customFieldsManager.field
 
     def remove_custom_def(self, field):
         changed = False
         f = dict()
         for x in self.custom_field_mgr:
-            if x.name == field:
+            if x.name == field and x.managedObjectType == vim.VirtualMachine:
                 changed = True
                 if not self.module.check_mode:
                     self.content.customFieldsManager.RemoveCustomFieldDef(key=x.key)

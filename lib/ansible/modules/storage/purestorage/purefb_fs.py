@@ -20,17 +20,19 @@ version_added: "2.6"
 short_description:  Manage filesystemon Pure Storage FlashBlade`
 description:
     - This module manages filesystems on Pure Storage FlashBlade.
-author: Simon Dodsley (@sdodsley)
+author: Pure Storage Ansible Team (@sdodsley) <pure-ansible-team@purestorage.com>
 options:
   name:
     description:
       - Filesystem Name.
     required: true
+    type: str
   state:
     description:
       - Create, delete or modifies a filesystem.
     required: false
     default: present
+    type: str
     choices: [ "present", "absent" ]
   eradicate:
     description:
@@ -41,6 +43,7 @@ options:
   size:
     description:
       - Volume size in M, G, T or P units. See examples.
+    type: str
     required: false
     default: 32G
   nfs:
@@ -54,6 +57,7 @@ options:
       - Define the NFS rules in operation.
     required: false
     default: '*(rw,no_root_squash)'
+    type: str
   smb:
     description:
       - Define whether to SMB protocol is enabled for the filesystem.
@@ -160,7 +164,7 @@ def get_fs(module, blade):
     try:
         res = blade.file_systems.list_file_systems(names=fs)
         return res.items[0]
-    except:
+    except Exception:
         return None
 
 
@@ -196,7 +200,7 @@ def create_fs(module, blade):
                                     )
             blade.file_systems.create_file_systems(fs_obj)
             changed = True
-        except:
+        except Exception:
             changed = False
     module.exit_json(changed=changed)
 
@@ -257,7 +261,7 @@ def modify_fs(module, blade):
             n_attr = FileSystem(**attr)
             try:
                 blade.file_systems.update_file_systems(name=module.params['name'], attributes=n_attr)
-            except:
+            except Exception:
                 changed = False
     module.exit_json(changed=changed)
 
@@ -277,9 +281,9 @@ def delete_fs(module, blade):
                 try:
                     blade.file_systems.delete_file_systems(module.params['name'])
                     changed = True
-                except:
+                except Exception:
                     changed = False
-        except:
+        except Exception:
             changed = False
     module.exit_json(changed=changed)
 
@@ -290,7 +294,7 @@ def eradicate_fs(module, blade):
         try:
             blade.file_systems.delete_file_systems(module.params['name'])
             changed = True
-        except:
+        except Exception:
             changed = False
     module.exit_json(changed=changed)
 

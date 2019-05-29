@@ -140,17 +140,17 @@ transfer_status:
     description: Whether a file was transferred. "No Transfer" or "Sent".
                  If file_pull is successful, it is set to "Received".
     returned: success
-    type: string
+    type: str
     sample: 'Sent'
 local_file:
     description: The path of the local file.
     returned: success
-    type: string
+    type: str
     sample: '/path/to/local/file'
 remote_file:
     description: The path of the remote file.
     returned: success
-    type: string
+    type: str
     sample: '/path/to/remote/file'
 '''
 
@@ -160,16 +160,11 @@ import re
 import time
 import traceback
 
+from ansible.module_utils.compat.paramiko import paramiko
 from ansible.module_utils.network.nxos.nxos import run_commands
 from ansible.module_utils.network.nxos.nxos import nxos_argument_spec, check_args
 from ansible.module_utils.basic import AnsibleModule
 from ansible.module_utils._text import to_native, to_text, to_bytes
-
-try:
-    import paramiko
-    HAS_PARAMIKO = True
-except ImportError:
-    HAS_PARAMIKO = False
 
 try:
     from scp import SCPClient
@@ -268,7 +263,7 @@ def transfer_file_to_device(module, dest):
     scp = SCPClient(ssh.get_transport())
     try:
         scp.put(module.params['local_file'], full_remote_path)
-    except:
+    except Exception:
         time.sleep(10)
         temp_size = verify_remote_file_exists(
             module, dest, file_system=module.params['file_system'])
@@ -293,12 +288,13 @@ def copy_file_from_remote(module, local, local_file_directory, file_system='boot
     try:
         child = pexpect.spawn('ssh ' + username + '@' + hostname + ' -p' + str(port))
         # response could be unknown host addition or Password
-        index = child.expect(['yes', '(?i)Password'])
+        index = child.expect(['yes', '(?i)Password', '#'])
         if index == 0:
             child.sendline('yes')
             child.expect('(?i)Password')
-        child.sendline(password)
-        child.expect('#')
+        if index == 1:
+            child.sendline(password)
+            child.expect('#')
         ldir = '/'
         if local_file_directory:
             dir_array = local_file_directory.split('/')
@@ -308,9 +304,12 @@ def copy_file_from_remote(module, local, local_file_directory, file_system='boot
                     child.expect('#')
                     ldir += each + '/'
 
-        command = ('copy scp://' + module.params['remote_scp_server_user'] +
-                   '@' + module.params['remote_scp_server'] + module.params['remote_file'] +
-                   ' ' + file_system + ldir + local + ' vrf management')
+        cmdroot = 'copy scp://'
+        ruser = module.params['remote_scp_server_user'] + '@'
+        rserver = module.params['remote_scp_server']
+        rfile = module.params['remote_file'] + ' '
+        vrf = ' vrf management'
+        command = (cmdroot + ruser + rserver + rfile + file_system + ldir + local + vrf)
 
         child.sendline(command)
         # response could be remote host connection time out,
@@ -388,7 +387,7 @@ def main():
                     'installed. It can be installed using `pip install pexpect`'
             )
     else:
-        if not HAS_PARAMIKO:
+        if paramiko is None:
             module.fail_json(
                 msg='library paramiko is required when file_pull is False but does not appear to be '
                     'installed. It can be installed using `pip install paramiko`'

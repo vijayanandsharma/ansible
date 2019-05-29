@@ -8,11 +8,11 @@ __metaclass__ = type
 
 import os
 import json
+import pytest
 import sys
 
-from nose.plugins.skip import SkipTest
 if sys.version_info < (2, 7):
-    raise SkipTest("F5 Ansible modules require Python >= 2.7")
+    pytestmark = pytest.mark.skip("F5 Ansible modules require Python >= 2.7")
 
 from ansible.module_utils.basic import AnsibleModule
 
@@ -30,21 +30,19 @@ try:
 
     from test.units.modules.utils import set_module_args
 except ImportError:
-    try:
-        from ansible.modules.network.f5.bigip_command import Parameters
-        from ansible.modules.network.f5.bigip_command import ModuleManager
-        from ansible.modules.network.f5.bigip_command import V1Manager
-        from ansible.modules.network.f5.bigip_command import V2Manager
-        from ansible.modules.network.f5.bigip_command import ArgumentSpec
+    from ansible.modules.network.f5.bigip_command import Parameters
+    from ansible.modules.network.f5.bigip_command import ModuleManager
+    from ansible.modules.network.f5.bigip_command import V1Manager
+    from ansible.modules.network.f5.bigip_command import V2Manager
+    from ansible.modules.network.f5.bigip_command import ArgumentSpec
 
-        # Ansible 2.8 imports
-        from units.compat import unittest
-        from units.compat.mock import Mock
-        from units.compat.mock import patch
+    # Ansible 2.8 imports
+    from units.compat import unittest
+    from units.compat.mock import Mock
+    from units.compat.mock import patch
 
-        from units.modules.utils import set_module_args
-    except ImportError:
-        raise SkipTest("F5 Ansible modules require the f5-sdk Python library")
+    from units.modules.utils import set_module_args
+
 
 fixture_path = os.path.join(os.path.dirname(__file__), 'fixtures')
 fixture_data = {}
@@ -68,9 +66,6 @@ class TestParameters(unittest.TestCase):
             commands=[
                 "tmsh show sys version"
             ],
-            server='localhost',
-            user='admin',
-            password='password'
         )
         p = Parameters(params=args)
         assert len(p.commands) == 1
@@ -91,9 +86,11 @@ class TestManager(unittest.TestCase):
             commands=[
                 "tmsh show sys version"
             ],
-            server='localhost',
-            user='admin',
-            password='password'
+            provider=dict(
+                server='localhost',
+                password='password',
+                user='admin'
+            )
         ))
 
         module = AnsibleModule(
@@ -119,9 +116,11 @@ class TestManager(unittest.TestCase):
             commands=[
                 "tmsh create ltm virtual foo"
             ],
-            server='localhost',
-            user='admin',
-            password='password'
+            provider=dict(
+                server='localhost',
+                password='password',
+                user='admin'
+            )
         ))
 
         module = AnsibleModule(
@@ -147,10 +146,12 @@ class TestManager(unittest.TestCase):
             commands=[
                 "show sys version"
             ],
-            server='localhost',
-            user='admin',
-            password='password',
-            transport='cli'
+            provider=dict(
+                server='localhost',
+                password='password',
+                user='admin',
+                transport='cli'
+            )
         ))
 
         module = AnsibleModule(
@@ -188,9 +189,11 @@ class TestManager(unittest.TestCase):
               enabled search-base-dn cn=users,dc=domain,dc=com servers add {
               ldap.server.com } }
             """,
-            server='localhost',
-            user='admin',
-            password='password'
+            provider=dict(
+                server='localhost',
+                password='password',
+                user='admin'
+            )
         ))
         module = AnsibleModule(
             argument_spec=self.spec.argument_spec,

@@ -24,6 +24,7 @@ options:
   name:
     description:
       - The name of the server.
+    type: str
     required: True
   state:
     description:
@@ -32,16 +33,18 @@ options:
         C(present) creates the server and enables it. If C(enabled), enable the server
         if it exists. If C(disabled), create the server if needed, and set state to
         C(disabled).
-    default: present
+    type: str
     choices:
       - present
       - absent
       - enabled
       - disabled
+    default: present
   datacenter:
     description:
       - Data center the server belongs to. When creating a new GTM server, this value
         is required.
+    type: str
   devices:
     description:
       - Lists the self IP addresses and translations for each device. When creating a
@@ -56,11 +59,13 @@ options:
       - Specifying duplicate C(name) fields is a supported means of providing device
         addresses. In this scenario, the addresses will be assigned to the C(name)'s list
         of addresses.
+    type: list
   server_type:
     description:
       - Specifies the server type. The server type determines the metrics that the
         system can collect from the server. When creating a new GTM server, the default
         value C(bigip) is used.
+    type: str
     choices:
       - alteon-ace-director
       - cisco-css
@@ -88,6 +93,7 @@ options:
       - If you set this parameter to C(enabled) or C(enabled-no-delete), you must
         also ensure that the C(virtual_server_discovery) parameter is also set to
         C(enabled) or C(enabled-no-delete).
+    type: str
     choices:
       - enabled
       - disabled
@@ -97,6 +103,7 @@ options:
       - Specifies whether the system auto-discovers the virtual servers for this server.
         When creating a new GTM server, if this parameter is not specified, the default
         value C(disabled) is used.
+    type: str
     choices:
       - enabled
       - disabled
@@ -104,6 +111,7 @@ options:
   partition:
     description:
       - Device partition to manage resources on.
+    type: str
     default: Common
     version_added: 2.5
   iquery_options:
@@ -126,12 +134,14 @@ options:
           - Specifies that the system checks the performance of a server running an SNMP
             agent.
         type: bool
+    type: dict
     version_added: 2.7
   monitors:
     description:
       - Specifies the health monitors that the system currently uses to monitor this resource.
       - When C(availability_requirements.type) is C(require), you may only have a single monitor in the
         C(monitors) list.
+    type: list
     version_added: 2.8
   availability_requirements:
     description:
@@ -143,13 +153,18 @@ options:
         description:
           - Monitor rule type when C(monitors) is specified.
           - When creating a new pool, if this value is not specified, the default of 'all' will be used.
-        choices: ['all', 'at_least', 'require']
+        type: str
+        choices:
+          - all
+          - at_least
+          - require
       at_least:
         description:
           - Specifies the minimum number of active health monitors that must be successful
             before the link is considered up.
           - This parameter is only relevant when a C(type) of C(at_least) is used.
           - This parameter will be ignored if a type of either C(all) or C(require) is used.
+        type: int
       number_of_probes:
         description:
           - Specifies the minimum number of probes that must succeed for this server to be declared up.
@@ -158,6 +173,7 @@ options:
           - The value of this parameter should always be B(lower) than, or B(equal to), the value of C(number_of_probers).
           - This parameter is only relevant when a C(type) of C(require) is used.
           - This parameter will be ignored if a type of either C(all) or C(at_least) is used.
+        type: int
       number_of_probers:
         description:
           - Specifies the number of probers that should be used when running probes.
@@ -166,6 +182,8 @@ options:
           - The value of this parameter should always be B(higher) than, or B(equal to), the value of C(number_of_probers).
           - This parameter is only relevant when a C(type) of C(require) is used.
           - This parameter will be ignored if a type of either C(all) or C(at_least) is used.
+        type: int
+    type: dict
     version_added: 2.8
   prober_preference:
     description:
@@ -173,6 +191,7 @@ options:
       - This option is ignored in C(TMOS) version C(12.x).
       - From C(TMOS) version C(13.x) and up, when prober_preference is set to C(pool)
         a C(prober_pool) parameter must be specified.
+    type: str
     choices:
       - inside-datacenter
       - outside-datacenter
@@ -188,6 +207,7 @@ options:
         a C(prober_pool) parameter must be specified.
       - The choices are mutually exclusive with prober_preference parameter,
         with the exception of C(any-available) or C(none) option.
+    type: str
     choices:
       - any
       - inside-datacenter
@@ -203,10 +223,78 @@ options:
       - Format of the name can be either be prepended by partition (C(/Common/foo)), or specified
         just as an object name (C(foo)).
       - In C(TMOS) version C(12.x) prober_pool can be set to empty string to revert to default setting of inherit.
+    type: str
+    version_added: 2.8
+  limits:
+    description:
+      - Specifies resource thresholds or limit requirements at the pool member level.
+      - When you enable one or more limit settings, the system then uses that data to take
+        members in and out of service.
+      - You can define limits for any or all of the limit settings. However, when a
+        member does not meet the resource threshold limit requirement, the system marks
+        the member as unavailable and directs load-balancing traffic to another resource.
+    suboptions:
+      bits_enabled:
+        description:
+          - Whether the bits limit it enabled or not.
+          - This parameter allows you to switch on or off the effect of the limit.
+        type: bool
+      packets_enabled:
+        description:
+          - Whether the packets limit it enabled or not.
+          - This parameter allows you to switch on or off the effect of the limit.
+        type: bool
+      connections_enabled:
+        description:
+          - Whether the current connections limit it enabled or not.
+          - This parameter allows you to switch on or off the effect of the limit.
+        type: bool
+      cpu_enabled:
+        description:
+          - Whether the CPU limit it enabled or not.
+          - This parameter allows you to switch on or off the effect of the limit.
+        type: bool
+      memory_enabled:
+        description:
+          - Whether the memory limit it enabled or not.
+          - This parameter allows you to switch on or off the effect of the limit.
+        type: bool
+      bits_limit:
+        description:
+          - Specifies the maximum allowable data throughput rate, in bits per second,
+            for the member.
+          - If the network traffic volume exceeds this limit, the system marks the
+            member as unavailable.
+        type: int
+      packets_limit:
+        description:
+          - Specifies the maximum allowable data transfer rate, in packets per second,
+            for the member.
+          - If the network traffic volume exceeds this limit, the system marks the
+            member as unavailable.
+        type: int
+      connections_limit:
+        description:
+          - Specifies the maximum number of concurrent connections, combined, for all of
+            the member.
+          - If the connections exceed this limit, the system marks the server as
+            unavailable.
+        type: int
+      cpu_limit:
+        description:
+          - Specifies the percent of CPU usage.
+          - If percent of CPU usage goes above the limit, the system marks the server as unavailable.
+        type: int
+      memory_limit:
+        description:
+          - Specifies the available memory required by the virtual servers on the server.
+          - If available memory falls below this limit, the system marks the server as unavailable.
+        type: int
+    type: dict
     version_added: 2.8
 extends_documentation_fragment: f5
 author:
-  - Robert Teller
+  - Robert Teller (@r-teller)
   - Tim Rupp (@caphrim007)
   - Wojciech Wypior (@wojtek0806)
 '''
@@ -214,20 +302,32 @@ author:
 EXAMPLES = r'''
 - name: Create server "GTM_Server"
   bigip_gtm_server:
-    server: lb.mydomain.com
-    user: admin
-    password: secret
     name: GTM_Server
     datacenter: /Common/New York
     server_type: bigip
     link_discovery: disabled
     virtual_server_discovery: disabled
     devices:
-      - {'name': 'server_1', 'address': '1.1.1.1'}
-      - {'name': 'server_2', 'address': '2.2.2.1', 'translation':'192.168.2.1'}
-      - {'name': 'server_2', 'address': '2.2.2.2'}
-      - {'name': 'server_3', 'addresses': [{'address':'3.3.3.1'},{'address':'3.3.3.2'}]}
-      - {'name': 'server_4', 'addresses': [{'address':'4.4.4.1','translation':'192.168.14.1'}, {'address':'4.4.4.2'}]}
+      - name: server_1
+        address: 1.1.1.1
+      - name: server_2
+        address: 2.2.2.1
+        translation: 192.168.2.1
+      - name: server_2
+        address: 2.2.2.2
+      - name: server_3
+        addresses:
+          - address: 3.3.3.1
+          - address: 3.3.3.2
+      - name: server_4
+        addresses:
+          - address: 4.4.4.1
+            translation: 192.168.14.1
+          - address: 4.4.4.2
+    provider:
+      user: admin
+      password: secret
+      server: lb.mydomain.com
   delegate_to: localhost
 
 - name: Create server "GTM_Server" with expanded keys
@@ -257,10 +357,34 @@ EXAMPLES = r'''
           - address: 4.4.4.1
             translation: 192.168.14.1
           - address: 4.4.4.2
+    provider:
+      user: admin
+      password: secret
+      server: lb.mydomain.com
   delegate_to: localhost
 '''
 
 RETURN = r'''
+bits_enabled:
+  description: Whether the bits limit is enabled.
+  returned: changed
+  type: bool
+  sample: yes
+bits_limit:
+  description: The new bits_enabled limit.
+  returned: changed
+  type: int
+  sample: 100
+connections_enabled:
+  description: Whether the connections limit is enabled.
+  returned: changed
+  type: bool
+  sample: yes
+connections_limit:
+  description: The new connections_limit limit.
+  returned: changed
+  type: int
+  sample: 100
 monitors:
   description: The new list of monitors for the resource.
   returned: changed
@@ -269,23 +393,33 @@ monitors:
 link_discovery:
   description: The new C(link_discovery) configured on the remote device.
   returned: changed
-  type: string
+  type: str
   sample: enabled
 virtual_server_discovery:
   description: The new C(virtual_server_discovery) name for the trap destination.
   returned: changed
-  type: string
+  type: str
   sample: disabled
 server_type:
   description: The new type of the server.
   returned: changed
-  type: string
+  type: str
   sample: bigip
 datacenter:
   description: The new C(datacenter) which the server is part of.
   returned: changed
-  type: string
+  type: str
   sample: datacenter01
+packets_enabled:
+  description: Whether the packets limit is enabled.
+  returned: changed
+  type: bool
+  sample: yes
+packets_limit:
+  description: The new packets_limit limit.
+  returned: changed
+  type: int
+  sample: 100
 '''
 
 import re
@@ -298,12 +432,9 @@ try:
     from library.module_utils.network.f5.bigip import F5RestClient
     from library.module_utils.network.f5.common import F5ModuleError
     from library.module_utils.network.f5.common import AnsibleF5Parameters
-    from library.module_utils.network.f5.common import cleanup_tokens
     from library.module_utils.network.f5.common import fq_name
     from library.module_utils.network.f5.common import f5_argument_spec
     from library.module_utils.network.f5.common import transform_name
-    from library.module_utils.network.f5.common import exit_json
-    from library.module_utils.network.f5.common import fail_json
     from library.module_utils.network.f5.common import is_empty_list
     from library.module_utils.network.f5.icontrol import tmos_version
     from library.module_utils.network.f5.icontrol import module_provisioned
@@ -311,12 +442,9 @@ except ImportError:
     from ansible.module_utils.network.f5.bigip import F5RestClient
     from ansible.module_utils.network.f5.common import F5ModuleError
     from ansible.module_utils.network.f5.common import AnsibleF5Parameters
-    from ansible.module_utils.network.f5.common import cleanup_tokens
     from ansible.module_utils.network.f5.common import fq_name
     from ansible.module_utils.network.f5.common import f5_argument_spec
     from ansible.module_utils.network.f5.common import transform_name
-    from ansible.module_utils.network.f5.common import exit_json
-    from ansible.module_utils.network.f5.common import fail_json
     from ansible.module_utils.network.f5.common import is_empty_list
     from ansible.module_utils.network.f5.icontrol import tmos_version
     from ansible.module_utils.network.f5.icontrol import module_provisioned
@@ -343,6 +471,16 @@ class Parameters(AnsibleF5Parameters):
         'proberPreference': 'prober_preference',
         'proberPool': 'prober_pool',
         'proberFallback': 'prober_fallback',
+        'limitMaxBps': 'bits_limit',
+        'limitMaxBpsStatus': 'bits_enabled',
+        'limitMaxConnections': 'connections_limit',
+        'limitMaxConnectionsStatus': 'connections_enabled',
+        'limitMaxPps': 'packets_limit',
+        'limitMaxPpsStatus': 'packets_enabled',
+        'limitCpuUsage': 'cpu_limit',
+        'limitCpuUsageStatus': 'cpu_enabled',
+        'limitMemAvail': 'memory_limit',
+        'limitMemAvailStatus': 'memory_enabled',
     }
 
     api_attributes = [
@@ -360,6 +498,16 @@ class Parameters(AnsibleF5Parameters):
         'proberPreference',
         'proberPool',
         'proberFallback',
+        'limitMaxBps',
+        'limitMaxBpsStatus',
+        'limitMaxConnections',
+        'limitMaxConnectionsStatus',
+        'limitMaxPps',
+        'limitMaxPpsStatus',
+        'limitCpuUsage',
+        'limitCpuUsageStatus',
+        'limitMemAvail',
+        'limitMemAvailStatus',
     ]
 
     updatables = [
@@ -375,6 +523,16 @@ class Parameters(AnsibleF5Parameters):
         'prober_preference',
         'prober_pool',
         'prober_fallback',
+        'bits_enabled',
+        'bits_limit',
+        'connections_enabled',
+        'connections_limit',
+        'packets_enabled',
+        'packets_limit',
+        'cpu_enabled',
+        'cpu_limit',
+        'memory_enabled',
+        'memory_limit',
     ]
 
     returnables = [
@@ -392,6 +550,16 @@ class Parameters(AnsibleF5Parameters):
         'prober_preference',
         'prober_pool',
         'prober_fallback',
+        'bits_enabled',
+        'bits_limit',
+        'connections_enabled',
+        'connections_limit',
+        'packets_enabled',
+        'packets_limit',
+        'cpu_enabled',
+        'cpu_limit',
+        'memory_enabled',
+        'memory_limit',
     ]
 
 
@@ -560,6 +728,22 @@ class ApiParameters(Parameters):
 
 
 class ModuleParameters(Parameters):
+    def _get_limit_value(self, type):
+        if self._values['limits'] is None:
+            return None
+        if self._values['limits'][type] is None:
+            return None
+        return int(self._values['limits'][type])
+
+    def _get_limit_status(self, type):
+        if self._values['limits'] is None:
+            return None
+        if self._values['limits'][type] is None:
+            return None
+        if self._values['limits'][type]:
+            return 'enabled'
+        return 'disabled'
+
     @property
     def devices(self):
         if self._values['devices'] is None:
@@ -716,6 +900,46 @@ class ModuleParameters(Parameters):
         if self._values['prober_fallback'] == 'any':
             return 'any-available'
         return self._values['prober_fallback']
+
+    @property
+    def bits_limit(self):
+        return self._get_limit_value('bits_limit')
+
+    @property
+    def packets_limit(self):
+        return self._get_limit_value('packets_limit')
+
+    @property
+    def connections_limit(self):
+        return self._get_limit_value('connections_limit')
+
+    @property
+    def cpu_limit(self):
+        return self._get_limit_value('cpu_limit')
+
+    @property
+    def memory_limit(self):
+        return self._get_limit_value('memory_limit')
+
+    @property
+    def bits_enabled(self):
+        return self._get_limit_status('bits_enabled')
+
+    @property
+    def packets_enabled(self):
+        return self._get_limit_status('packets_enabled')
+
+    @property
+    def connections_enabled(self):
+        return self._get_limit_status('connections_enabled')
+
+    @property
+    def cpu_enabled(self):
+        return self._get_limit_status('cpu_enabled')
+
+    @property
+    def memory_enabled(self):
+        return self._get_limit_status('memory_enabled')
 
 
 class Changes(Parameters):
@@ -933,9 +1157,21 @@ class Difference(object):
             )
         want = [OrderedDict(sorted(d.items())) for d in devices]
         have = [OrderedDict(sorted(d.items())) for d in have_devices]
+        if len(have_devices) > 0:
+            if self._false_positive(devices, have_devices):
+                return False
         if want != have:
             return True
         return False
+
+    def _false_positive(self, devices, have_devices):
+        match = 0
+        for w in devices:
+            for h in have_devices:
+                if w.items() == h.items():
+                    match = match + 1
+        if match == len(devices):
+            return True
 
     def _server_type_changed(self):
         if self.want.server_type is None:
@@ -1124,7 +1360,7 @@ class Difference(object):
 class ModuleManager(object):
     def __init__(self, *args, **kwargs):
         self.module = kwargs.get('module', None)
-        self.client = kwargs.get('client', None)
+        self.client = F5RestClient(**self.module.params)
         self.kwargs = kwargs
 
     def exec_module(self):
@@ -1155,7 +1391,7 @@ class ModuleManager(object):
 class BaseManager(object):
     def __init__(self, *args, **kwargs):
         self.module = kwargs.get('module', None)
-        self.client = kwargs.get('client', None)
+        self.client = F5RestClient(**self.module.params)
         self.want = ModuleParameters(params=self.module.params)
         self.want.update(dict(client=self.client))
         self.have = ApiParameters()
@@ -1506,6 +1742,21 @@ class ArgumentSpec(object):
                     ['type', 'require', ['number_of_probes', 'number_of_probers']]
                 ]
             ),
+            limits=dict(
+                type='dict',
+                options=dict(
+                    bits_enabled=dict(type='bool'),
+                    packets_enabled=dict(type='bool'),
+                    connections_enabled=dict(type='bool'),
+                    cpu_enabled=dict(type='bool'),
+                    memory_enabled=dict(type='bool'),
+                    bits_limit=dict(type='int'),
+                    packets_limit=dict(type='int'),
+                    connections_limit=dict(type='int'),
+                    cpu_limit=dict(type='int'),
+                    memory_limit=dict(type='int'),
+                )
+            ),
             monitors=dict(type='list'),
             prober_preference=dict(
                 choices=['inside-datacenter', 'outside-datacenter', 'inherit', 'pool']
@@ -1530,16 +1781,12 @@ def main():
         supports_check_mode=spec.supports_check_mode,
     )
 
-    client = F5RestClient(**module.params)
-
     try:
-        mm = ModuleManager(module=module, client=client)
+        mm = ModuleManager(module=module)
         results = mm.exec_module()
-        cleanup_tokens(client)
-        exit_json(module, results, client)
+        module.exit_json(**results)
     except F5ModuleError as ex:
-        cleanup_tokens(client)
-        fail_json(module, ex, client)
+        module.fail_json(msg=str(ex))
 
 
 if __name__ == '__main__':

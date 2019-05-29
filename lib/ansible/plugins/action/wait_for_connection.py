@@ -24,12 +24,9 @@ from datetime import datetime, timedelta
 
 from ansible.module_utils._text import to_text
 from ansible.plugins.action import ActionBase
+from ansible.utils.display import Display
 
-try:
-    from __main__ import display
-except ImportError:
-    from ansible.utils.display import Display
-    display = Display()
+display = Display()
 
 
 class TimedOutException(Exception):
@@ -89,7 +86,7 @@ class ActionModule(ActionBase):
                 pass
 
             # Use win_ping on winrm/powershell, else use ping
-            if hasattr(self._connection, '_shell_type') and self._connection._shell_type == 'powershell':
+            if getattr(self._connection._shell, "_IS_WINDOWS", False):
                 ping_result = self._execute_module(module_name='win_ping', module_args=dict(), task_vars=task_vars)
             else:
                 ping_result = self._execute_module(module_name='ping', module_args=dict(), task_vars=task_vars)

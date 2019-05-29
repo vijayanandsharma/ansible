@@ -23,8 +23,8 @@ version_added: "1.2"
 author:
     - "Andrew Newdigate (@suprememoocow)"
     - "Dylan Silva (@thaumos)"
-    - "Justin Johns"
-    - "Bruce Pennypacker"
+    - "Justin Johns (!UNKNOWN)"
+    - "Bruce Pennypacker (@bpennypacker)"
 requirements:
     - PagerDuty API access
 options:
@@ -222,7 +222,7 @@ class PagerDutyRequest(object):
     def _read_response(self, response):
         try:
             return json.loads(response.read())
-        except:
+        except Exception:
             return ""
 
 

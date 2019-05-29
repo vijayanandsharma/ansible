@@ -95,11 +95,12 @@ import os
 from functools import partial
 
 from ansible.errors import AnsibleFileNotFound, AnsibleParserError
-from ansible.module_utils._text import to_bytes, to_native
+from ansible.module_utils._text import to_bytes, to_native, to_text
 from ansible.module_utils.common._collections_compat import MutableMapping, MutableSequence
 from ansible.module_utils.six import string_types, text_type
 from ansible.parsing.yaml.objects import AnsibleSequence, AnsibleUnicode
 from ansible.plugins.inventory import BaseFileInventoryPlugin
+from ansible.utils.display import Display
 
 try:
     import toml
@@ -107,12 +108,7 @@ try:
 except ImportError:
     HAS_TOML = False
 
-try:
-    from __main__ import display
-except ImportError:
-    from ansible.utils.display import Display
-    display = Display()
-
+display = Display()
 
 WARNING_MSG = (
     'The TOML inventory format is marked as preview, which means that it is not guaranteed to have a backwards '
@@ -167,7 +163,7 @@ class InventoryModule(BaseFileInventoryPlugin):
             self.display.warning("Skipping '%s' as this is not a valid group definition" % group)
             return
 
-        self.inventory.add_group(group)
+        group = self.inventory.add_group(group)
         if group_data is None:
             return
 
@@ -215,8 +211,8 @@ class InventoryModule(BaseFileInventoryPlugin):
             raise AnsibleFileNotFound("Unable to retrieve file contents", file_name=file_name)
 
         try:
-            with open(b_file_name, 'r') as f:
-                return toml.load(f)
+            (b_data, private) = self.loader._get_file_contents(file_name)
+            return toml.loads(to_text(b_data, errors='surrogate_or_strict'))
         except toml.TomlDecodeError as e:
             raise AnsibleParserError(
                 'TOML file (%s) is invalid: %s' % (file_name, to_native(e)),

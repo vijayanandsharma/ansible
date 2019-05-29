@@ -8,11 +8,11 @@ __metaclass__ = type
 
 import os
 import json
+import pytest
 import sys
 
-from nose.plugins.skip import SkipTest
 if sys.version_info < (2, 7):
-    raise SkipTest("F5 Ansible modules require Python >= 2.7")
+    pytestmark = pytest.mark.skip("F5 Ansible modules require Python >= 2.7")
 
 from ansible.module_utils.basic import AnsibleModule
 
@@ -28,19 +28,17 @@ try:
 
     from test.units.modules.utils import set_module_args
 except ImportError:
-    try:
-        from ansible.modules.network.f5.bigip_device_httpd import Parameters
-        from ansible.modules.network.f5.bigip_device_httpd import ModuleManager
-        from ansible.modules.network.f5.bigip_device_httpd import ArgumentSpec
+    from ansible.modules.network.f5.bigip_device_httpd import Parameters
+    from ansible.modules.network.f5.bigip_device_httpd import ModuleManager
+    from ansible.modules.network.f5.bigip_device_httpd import ArgumentSpec
 
-        # Ansible 2.8 imports
-        from units.compat import unittest
-        from units.compat.mock import Mock
-        from units.compat.mock import patch
+    # Ansible 2.8 imports
+    from units.compat import unittest
+    from units.compat.mock import Mock
+    from units.compat.mock import patch
 
-        from units.modules.utils import set_module_args
-    except ImportError:
-        raise SkipTest("F5 Ansible modules require the f5-sdk Python library")
+    from units.modules.utils import set_module_args
+
 
 fixture_path = os.path.join(os.path.dirname(__file__), 'fixtures')
 fixture_data = {}
@@ -107,9 +105,11 @@ class TestModuleManager(unittest.TestCase):
                 max_clients='20',
                 redirect_http_to_https='yes',
                 ssl_port=8443,
-                server='localhost',
-                user='admin',
-                password='password'
+                provider=dict(
+                    server='localhost',
+                    password='password',
+                    user='admin'
+                )
             )
         )
 
@@ -132,9 +132,11 @@ class TestModuleManager(unittest.TestCase):
         set_module_args(
             dict(
                 ssl_cipher_suite='ECDHE-RSA-AES128-GCM-SHA256:ECDHE-RSA-AES256-GCM-SHA384',
-                server='localhost',
-                user='admin',
-                password='password'
+                provider=dict(
+                    server='localhost',
+                    password='password',
+                    user='admin'
+                )
             )
         )
 
@@ -161,9 +163,11 @@ class TestModuleManager(unittest.TestCase):
                     'ECDHE-RSA-AES128-GCM-SHA256',
                     'ECDHE-RSA-AES256-GCM-SHA384'
                 ],
-                server='localhost',
-                user='admin',
-                password='password'
+                provider=dict(
+                    server='localhost',
+                    password='password',
+                    user='admin'
+                )
             )
         )
 
@@ -187,9 +191,11 @@ class TestModuleManager(unittest.TestCase):
         set_module_args(
             dict(
                 ssl_cipher_suite='default',
-                server='localhost',
-                user='admin',
-                password='password'
+                provider=dict(
+                    server='localhost',
+                    password='password',
+                    user='admin'
+                )
             )
         )
 
@@ -213,9 +219,11 @@ class TestModuleManager(unittest.TestCase):
         set_module_args(
             dict(
                 ssl_protocols='all -SSLv2',
-                server='localhost',
-                user='admin',
-                password='password'
+                provider=dict(
+                    server='localhost',
+                    password='password',
+                    user='admin'
+                )
             )
         )
 
@@ -242,9 +250,11 @@ class TestModuleManager(unittest.TestCase):
                     'all',
                     '-SSLv2'
                 ],
-                server='localhost',
-                user='admin',
-                password='password'
+                provider=dict(
+                    server='localhost',
+                    password='password',
+                    user='admin'
+                )
             )
         )
 
@@ -268,9 +278,11 @@ class TestModuleManager(unittest.TestCase):
         set_module_args(
             dict(
                 ssl_protocols='default',
-                server='localhost',
-                user='admin',
-                password='password'
+                provider=dict(
+                    server='localhost',
+                    password='password',
+                    user='admin'
+                )
             )
         )
 

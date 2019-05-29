@@ -24,7 +24,13 @@ options:
   name:
     description:
       - Specifies the name of the data group.
+    type: str
     required: True
+  description:
+    description:
+      - The description of the data group.
+    type: str
+    version_added: 2.8
   type:
     description:
       - The type of records in this data group.
@@ -33,6 +39,7 @@ options:
         to specify a list of records containing IP addresses, but label them as a C(string)
         type.
       - This value cannot be changed once the data group is created.
+    type: str
     choices:
       - address
       - addr
@@ -67,6 +74,7 @@ options:
       - If this value is not provided, it will be given the value specified in C(name) and,
         therefore, match the name of the data group.
       - This value may only contain letters, numbers, underscores, dashes, or a period.
+    type: str
   records:
     description:
       - Specifies the records that you want to add to a data group.
@@ -77,15 +85,18 @@ options:
         RAM.
       - When C(internal) is C(no), at least one record must be specified in either C(records)
         or C(records_content).
+    type: list
     suboptions:
       key:
         description:
           - The key describing the record in the data group.
           - Your key will be used for validation of the C(type) parameter to this module.
+        type: str
         required: True
       value:
         description:
           - The value of the key describing the record in the data group.
+        type: raw
   records_src:
     description:
       - Path to a file with records in it.
@@ -104,6 +115,7 @@ options:
         group file.
       - When C(internal) is C(no), at least one record must be specified in either C(records)
         or C(records_content).
+    type: path
   separator:
     description:
       - When specifying C(records_content), this is the string of characters that will
@@ -112,25 +124,31 @@ options:
       - This value cannot be changed once it is set.
       - This parameter is only relevant when C(internal) is C(no). It will be ignored
         otherwise.
+    type: str
     default: ":="
   delete_data_group_file:
     description:
       - When C(yes), will ensure that the remote data group file is deleted.
       - This parameter is only relevant when C(state) is C(absent) and C(internal) is C(no).
-    default: no
     type: bool
+    default: no
   partition:
     description:
       - Device partition to manage resources on.
+    type: str
     default: Common
   state:
     description:
       - When C(state) is C(present), ensures the data group exists.
       - When C(state) is C(absent), ensures that the data group is removed.
+      - The use of state in this module refers to the entire data group, not its members.
+    type: str
     choices:
       - present
       - absent
     default: present
+notes:
+  - This module does NOT support atomic updates of data group members in a type C(internal) data group.
 extends_documentation_fragment: f5
 author:
   - Tim Rupp (@caphrim007)
@@ -141,6 +159,7 @@ EXAMPLES = r'''
 - name: Create a data group of addresses
   bigip_data_group:
     name: foo
+    internal: yes
     records:
       - key: 0.0.0.0/32
         value: External_NAT
@@ -156,6 +175,7 @@ EXAMPLES = r'''
 - name: Create a data group of strings
   bigip_data_group:
     name: foo
+    internal: yes
     records:
       - key: caddy
         value: ""
@@ -163,7 +183,7 @@ EXAMPLES = r'''
         value: ""
       - key: cactus
         value: ""
-    type: string
+    type: str
     provider:
       password: secret
       server: lb.mydomain.com
@@ -264,30 +284,26 @@ try:
     from library.module_utils.network.f5.bigip import F5RestClient
     from library.module_utils.network.f5.common import F5ModuleError
     from library.module_utils.network.f5.common import AnsibleF5Parameters
-    from library.module_utils.network.f5.common import cleanup_tokens
     from library.module_utils.network.f5.common import transform_name
-    from library.module_utils.network.f5.common import exit_json
-    from library.module_utils.network.f5.common import fail_json
-    from library.module_utils.network.f5.common import compare_complex_list
+    from library.module_utils.network.f5.compare import compare_complex_list
     from library.module_utils.network.f5.common import f5_argument_spec
     from library.module_utils.network.f5.ipaddress import is_valid_ip_interface
     from library.module_utils.compat.ipaddress import ip_network
     from library.module_utils.compat.ipaddress import ip_interface
     from library.module_utils.network.f5.icontrol import upload_file
+    from library.module_utils.network.f5.compare import cmp_str_with_none
 except ImportError:
     from ansible.module_utils.network.f5.bigip import F5RestClient
     from ansible.module_utils.network.f5.common import F5ModuleError
     from ansible.module_utils.network.f5.common import AnsibleF5Parameters
-    from ansible.module_utils.network.f5.common import cleanup_tokens
     from ansible.module_utils.network.f5.common import transform_name
-    from ansible.module_utils.network.f5.common import exit_json
-    from ansible.module_utils.network.f5.common import fail_json
-    from ansible.module_utils.network.f5.common import compare_complex_list
+    from ansible.module_utils.network.f5.compare import compare_complex_list
     from ansible.module_utils.network.f5.common import f5_argument_spec
     from ansible.module_utils.network.f5.ipaddress import is_valid_ip_interface
     from ansible.module_utils.compat.ipaddress import ip_network
     from ansible.module_utils.compat.ipaddress import ip_interface
     from ansible.module_utils.network.f5.icontrol import upload_file
+    from ansible.module_utils.network.f5.compare import cmp_str_with_none
 
 
 LINE_LIMIT = 65000
@@ -502,19 +518,25 @@ class RecordsDecoder(object):
 
 class Parameters(AnsibleF5Parameters):
     api_map = {
-        'externalFileName': 'external_file_name'
+        'externalFileName': 'external_file_name',
     }
 
     api_attributes = [
-        'records', 'type'
+        'records',
+        'type',
+        'description',
     ]
 
     returnables = [
-        'type', 'records'
+        'type',
+        'records',
+        'description',
     ]
 
     updatables = [
-        'records', 'checksum'
+        'records',
+        'checksum',
+        'description',
     ]
 
     @property
@@ -533,10 +555,14 @@ class Parameters(AnsibleF5Parameters):
             return self._values['records_src']
         except AttributeError:
             pass
+
         if self._values['records_src']:
             records = open(self._values['records_src'])
         else:
             records = self._values['records']
+
+        if records is None:
+            return None
 
         # There is a 98% chance that the user will supply a data group that is < 1MB.
         # 99.917% chance it is less than 10 MB. This is well within the range of typical
@@ -564,6 +590,17 @@ class Parameters(AnsibleF5Parameters):
 
 
 class ApiParameters(Parameters):
+
+    def _strip_route_domain(self, item):
+        result = dict()
+        pattern = r'(?P<ip>[^%]+)%(?P<route_domain>[0-9]+)/(?P<mask>[0-9]+)'
+        matches = re.search(pattern, item['name'])
+        if matches:
+            result['data'] = item['data']
+            result['name'] = '{0}/{1}'.format(matches.group('ip'), matches.group('mask'))
+            return result
+        return item
+
     @property
     def checksum(self):
         if self._values['checksum'] is None:
@@ -575,18 +612,35 @@ class ApiParameters(Parameters):
     def records(self):
         if self._values['records'] is None:
             return None
-        return self._values['records']
+        result = [self._strip_route_domain(item) for item in self._values['records']]
+        return result
 
     @property
     def records_list(self):
         return self.records
 
+    @property
+    def description(self):
+        if self._values['description'] in [None, 'none']:
+            return None
+        return self._values['description']
+
 
 class ModuleParameters(Parameters):
+    @property
+    def description(self):
+        if self._values['description'] is None:
+            return None
+        elif self._values['description'] in ['none', '']:
+            return ''
+        return self._values['description']
+
     @property
     def checksum(self):
         if self._values['checksum']:
             return self._values['checksum']
+        if self.records_src is None:
+            return None
         result = hashlib.sha1()
         records = self.records_src
         while True:
@@ -613,6 +667,8 @@ class ModuleParameters(Parameters):
     @property
     def records(self):
         results = []
+        if self.records_src is None:
+            return None
         decoder = RecordsDecoder(record_type=self.type, separator=self.separator)
         for record in self.records_src:
             result = decoder.decode(record)
@@ -693,14 +749,20 @@ class Difference(object):
     def checksum(self):
         if self.want.internal:
             return None
+        if self.want.checksum is None:
+            return None
         if self.want.checksum != self.have.checksum:
             return True
+
+    @property
+    def description(self):
+        return cmp_str_with_none(self.want.description, self.have.description)
 
 
 class BaseManager(object):
     def __init__(self, *args, **kwargs):
         self.module = kwargs.get('module', None)
-        self.client = kwargs.get('client', None)
+        self.client = F5RestClient(**self.module.params)
         self.want = ModuleParameters(params=self.module.params)
         self.have = ApiParameters()
         self.changes = UsableChanges()
@@ -911,7 +973,7 @@ class ExternalManager(BaseManager):
         self.have = self.read_current_from_device()
         if not self.should_update():
             return False
-        if zero_length(self.want.records_src):
+        if self.changes.records_src and zero_length(self.want.records_src):
             raise F5ModuleError(
                 "An external data group cannot be empty."
             )
@@ -1035,8 +1097,11 @@ class ExternalManager(BaseManager):
         params = dict(
             name=self.want.name,
             partition=self.want.partition,
-            externalFileName=external_file
+            externalFileName=external_file,
         )
+        if self.want.description:
+            params['description'] = self.want.description
+
         uri = "https://{0}:{1}/mgmt/tm/ltm/data-group/external/".format(
             self.client.provider['server'],
             self.client.provider['server_port']
@@ -1057,16 +1122,25 @@ class ExternalManager(BaseManager):
         self.remove_file_on_device(remote_path)
 
     def update_on_device(self):
-        name = self.want.external_file_name
-        remote_path = '/var/config/rest/downloads/{0}'.format(name)
-        external_file = self._upload_to_file(name, self.have.type, remote_path, update=True)
+        params = {}
+
+        if self.want.records_src is not None:
+            name = self.want.external_file_name
+            remote_path = '/var/config/rest/downloads/{0}'.format(name)
+            external_file = self._upload_to_file(name, self.have.type, remote_path, update=True)
+            params['externalFileName'] = external_file
+        if self.changes.description is not None:
+            params['description'] = self.changes.description
+
+        if not params:
+            return
 
         uri = "https://{0}:{1}/mgmt/tm/ltm/data-group/external/{2}".format(
             self.client.provider['server'],
             self.client.provider['server_port'],
             transform_name(self.want.partition, self.want.name)
         )
-        params = {'externalFileName': external_file}
+
         resp = self.client.api.patch(uri, json=params)
 
         try:
@@ -1165,14 +1239,15 @@ class ExternalManager(BaseManager):
                 raise F5ModuleError(response['message'])
             else:
                 raise F5ModuleError(resp.content)
-        return ApiParameters(params=response)
+        result = ApiParameters(params=response)
+        result.update({'description': response_dg.get('description', None)})
+        return result
 
 
 class ModuleManager(object):
     def __init__(self, *args, **kwargs):
         self.kwargs = kwargs
         self.module = kwargs.get('module')
-        self.client = kwargs.get('client', None)
 
     def exec_module(self):
         if self.module.params['internal']:
@@ -1209,6 +1284,7 @@ class ArgumentSpec(object):
             records_src=dict(type='path'),
             external_file_name=dict(),
             separator=dict(default=':='),
+            description=dict(),
             state=dict(choices=['absent', 'present'], default='present'),
             partition=dict(
                 default='Common',
@@ -1228,19 +1304,16 @@ def main():
 
     module = AnsibleModule(
         argument_spec=spec.argument_spec,
-        supports_check_mode=spec.supports_check_mode
+        supports_check_mode=spec.supports_check_mode,
+        mutually_exclusive=spec.mutually_exclusive
     )
 
-    client = F5RestClient(**module.params)
-
     try:
-        mm = ModuleManager(module=module, client=client)
+        mm = ModuleManager(module=module)
         results = mm.exec_module()
-        cleanup_tokens(client)
-        exit_json(module, results, client)
+        module.exit_json(**results)
     except F5ModuleError as ex:
-        cleanup_tokens(client)
-        fail_json(module, ex, client)
+        module.fail_json(msg=str(ex))
 
 
 if __name__ == '__main__':

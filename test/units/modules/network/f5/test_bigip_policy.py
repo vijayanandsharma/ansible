@@ -8,11 +8,11 @@ __metaclass__ = type
 
 import os
 import json
+import pytest
 import sys
 
-from nose.plugins.skip import SkipTest
 if sys.version_info < (2, 7):
-    raise SkipTest("F5 Ansible modules require Python >= 2.7")
+    pytestmark = pytest.mark.skip("F5 Ansible modules require Python >= 2.7")
 
 from ansible.module_utils.basic import AnsibleModule
 
@@ -30,21 +30,19 @@ try:
 
     from test.units.modules.utils import set_module_args
 except ImportError:
-    try:
-        from ansible.modules.network.f5.bigip_policy import Parameters
-        from ansible.modules.network.f5.bigip_policy import ModuleManager
-        from ansible.modules.network.f5.bigip_policy import SimpleManager
-        from ansible.modules.network.f5.bigip_policy import ComplexManager
-        from ansible.modules.network.f5.bigip_policy import ArgumentSpec
+    from ansible.modules.network.f5.bigip_policy import Parameters
+    from ansible.modules.network.f5.bigip_policy import ModuleManager
+    from ansible.modules.network.f5.bigip_policy import SimpleManager
+    from ansible.modules.network.f5.bigip_policy import ComplexManager
+    from ansible.modules.network.f5.bigip_policy import ArgumentSpec
 
-        # Ansible 2.8 imports
-        from units.compat import unittest
-        from units.compat.mock import Mock
-        from units.compat.mock import patch
+    # Ansible 2.8 imports
+    from units.compat import unittest
+    from units.compat.mock import Mock
+    from units.compat.mock import patch
 
-        from units.modules.utils import set_module_args
-    except ImportError:
-        raise SkipTest("F5 Ansible modules require the f5-sdk Python library")
+    from units.modules.utils import set_module_args
+
 
 fixture_path = os.path.join(os.path.dirname(__file__), 'fixtures')
 fixture_data = {}
@@ -73,9 +71,6 @@ class TestParameters(unittest.TestCase):
         args = dict(
             name='foo',
             description='asdf asdf asdf',
-            password='password',
-            server='localhost',
-            user='admin'
         )
         p = Parameters(params=args)
         assert p.name == 'foo'
@@ -86,10 +81,7 @@ class TestParameters(unittest.TestCase):
         args = dict(
             name='foo',
             description='asdf asdf asdf',
-            password='password',
-            server='localhost',
             strategy='foo',
-            user='admin',
             partition='Common'
         )
         p = Parameters(params=args)
@@ -101,10 +93,7 @@ class TestParameters(unittest.TestCase):
         args = dict(
             name='foo',
             description='asdf asdf asdf',
-            password='password',
-            server='localhost',
             strategy='/Common/foo',
-            user='admin',
             partition='Common'
         )
         p = Parameters(params=args)
@@ -116,10 +105,7 @@ class TestParameters(unittest.TestCase):
         args = dict(
             name='foo',
             description='asdf asdf asdf',
-            password='password',
-            server='localhost',
             strategy='/Foo/bar',
-            user='admin',
             partition='Common'
         )
         p = Parameters(params=args)
@@ -149,9 +135,11 @@ class TestSimpleTrafficPolicyManager(unittest.TestCase):
             name="Policy-Foo",
             state='present',
             strategy='best',
-            password='password',
-            server='localhost',
-            user='admin'
+            provider=dict(
+                server='localhost',
+                password='password',
+                user='admin'
+            )
         ))
 
         module = AnsibleModule(

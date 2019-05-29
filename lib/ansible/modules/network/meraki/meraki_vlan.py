@@ -141,12 +141,12 @@ response:
     applianceIp:
       description: IP address of Meraki appliance in the VLAN
       returned: success
-      type: string
+      type: str
       sample: 192.0.1.1
     dnsnamservers:
       description: IP address or Meraki defined DNS servers which VLAN should use by default
       returned: success
-      type: string
+      type: str
       sample: upstream_dns
     fixedIpAssignments:
       description: List of MAC addresses which have IP addresses assigned.
@@ -161,12 +161,12 @@ response:
             ip:
               description: IP address which is assigned to the MAC address.
               returned: success
-              type: string
+              type: str
               sample: 192.0.1.4
             name:
               description: Descriptive name for binding.
               returned: success
-              type: string
+              type: str
               sample: fixed_ip
     reservedIpRanges:
       description: List of IP address ranges which are reserved for static assignment.
@@ -176,17 +176,17 @@ response:
         comment:
           description: Description for IP address reservation.
           returned: success
-          type: string
+          type: str
           sample: reserved_range
         end:
           description: Last IP address in reservation range.
           returned: success
-          type: string
+          type: str
           sample: 192.0.1.10
         start:
           description: First IP address in reservation range.
           returned: success
-          type: string
+          type: str
           sample: 192.0.1.5
     id:
       description: VLAN ID number.
@@ -194,20 +194,69 @@ response:
       type: int
       sample: 2
     name:
-      description: Descriptive name of VLAN
+      description: Descriptive name of VLAN.
       returned: success
-      type: string
+      type: str
       sample: TestVLAN
     networkId:
       description: ID number of Meraki network which VLAN is associated to.
       returned: success
-      type: string
+      type: str
       sample: N_12345
     subnet:
       description: CIDR notation IP subnet of VLAN.
       returned: success
-      type: string
-      sample: 192.0.1.0/24
+      type: str
+      sample: "192.0.1.0/24"
+    dhcpHandling:
+      description: Status of DHCP server on VLAN.
+      returned: success
+      type: str
+      sample: Run a DHCP server
+    dhcpLeaseTime:
+      description: DHCP lease time when server is active.
+      returned: success
+      type: str
+      sample: 1 day
+    dhcpBootOptionsEnabled:
+      description: Whether DHCP boot options are enabled.
+      returned: success
+      type: bool
+      sample: no
+    dhcpBootNextServer:
+      description: DHCP boot option to direct boot clients to the server to load the boot file from.
+      returned: success
+      type: str
+      sample: 192.0.1.2
+    dhcpBootFilename:
+      description: Filename for boot file.
+      returned: success
+      type: str
+      sample: boot.txt
+    dhcpOptions:
+      description: DHCP options.
+      returned: success
+      type: complex
+      contains:
+        code:
+          description:
+            - Code for DHCP option.
+            - Integer between 2 and 254.
+          returned: success
+          type: int
+          sample: 43
+        type:
+          description:
+            - Type for DHCP option.
+            - Choices are C(text), C(ip), C(hex), C(integer).
+          returned: success
+          type: str
+          sample: text
+        value:
+          description: Value for the DHCP option.
+          returned: success
+          type: str
+          sample: 192.0.1.2
 '''
 
 import os
@@ -221,13 +270,6 @@ def fixed_ip_factory(meraki, data):
     for item in data:
         fixed_ips[item['mac']] = {'ip': item['ip'], 'name': item['name']}
     return fixed_ips
-
-
-def temp_get_nets(meraki, org_name):
-    org_id = meraki.get_org_id(org_name)
-    path = meraki.construct_path('get_all', function='network', org_id=org_id)
-    r = meraki.request(path, method='GET')
-    return r
 
 
 def get_vlans(meraki, net_id):
@@ -312,12 +354,10 @@ def main():
     org_id = meraki.params['org_id']
     if org_id is None:
         org_id = meraki.get_org_id(meraki.params['org_name'])
-    nets = meraki.get_nets(org_id=org_id)
-    net_id = None
-    if meraki.params['net_name']:
+    net_id = meraki.params['net_id']
+    if net_id is None:
+        nets = meraki.get_nets(org_id=org_id)
         net_id = meraki.get_net_id(net_name=meraki.params['net_name'], data=nets)
-    elif meraki.params['net_id']:
-        net_id = meraki.params['net_id']
 
     if meraki.params['state'] == 'query':
         if not meraki.params['vlan_id']:
@@ -357,6 +397,8 @@ def main():
                 response = meraki.request(path, method='PUT', payload=json.dumps(payload))
                 meraki.result['changed'] = True
                 meraki.result['data'] = response
+            else:
+                meraki.result['data'] = original
     elif meraki.params['state'] == 'absent':
         if is_vlan_valid(meraki, net_id, meraki.params['vlan_id']):
             path = meraki.construct_path('delete', net_id=net_id) + str(meraki.params['vlan_id'])

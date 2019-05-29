@@ -52,12 +52,20 @@ options:
     description:
       - Password of the user to login into OpenNebula RPC server. If not set
       - then the value of the C(ONE_PASSWORD) environment variable is used.
+      - if both I(api_username) or I(api_password) are not set, then it will try
+      - authenticate with ONE auth file. Default path is "~/.one/one_auth".
+      - Set environment variable C(ONE_AUTH) to override this path.
   template_name:
     description:
       - Name of VM template to use to create a new instace
   template_id:
     description:
       - ID of a VM template to use to create a new instance
+  vm_start_on_hold:
+    description:
+      - Set to true to put vm on hold while creating
+    default: False
+    version_added: '2.9'
   instance_ids:
     description:
       - A list of instance ids used for states':' C(absent), C(running), C(rebooted), C(poweredoff)
@@ -178,6 +186,11 @@ EXAMPLES = '''
 # Print VM properties
 - debug:
     msg: result
+
+# Deploy a new VM on hold
+- one_vm:
+    template_name: 'app1_template'
+    vm_start_on_hold: 'True'
 
 # Deploy a new VM and set its name to 'foo'
 - one_vm:
@@ -359,44 +372,44 @@ instances:
     contains:
         vm_id:
             description: vm id
-            type: integer
+            type: int
             sample: 153
         vm_name:
             description: vm name
-            type: string
+            type: str
             sample: foo
         template_id:
             description: vm's template id
-            type: integer
+            type: int
             sample: 153
         group_id:
             description: vm's group id
-            type: integer
+            type: int
             sample: 1
         group_name:
             description: vm's group name
-            type: string
+            type: str
             sample: one-users
         owner_id:
             description: vm's owner id
-            type: integer
+            type: int
             sample: 143
         owner_name:
             description: vm's owner name
-            type: string
+            type: str
             sample: app-user
         mode:
             description: vm's mode
-            type: string
+            type: str
             returned: success
             sample: 660
         state:
             description: state of an instance
-            type: string
+            type: str
             sample: ACTIVE
         lcm_state:
             description: lcm state of an instance that is only relevant when the state is ACTIVE
-            type: string
+            type: str
             sample: RUNNING
         cpu:
             description: Percentage of CPU divided by 100
@@ -408,11 +421,11 @@ instances:
             sample: 2
         memory:
             description: The size of the memory in MB
-            type: string
+            type: str
             sample: 4096 MB
         disk_size:
             description: The size of the disk in MB
-            type: string
+            type: str
             sample: 20480 MB
         networks:
             description: a list of dictionaries with info about IP, NAME, MAC, SECURITY_GROUPS for each NIC
@@ -433,7 +446,7 @@ instances:
                     ]
         uptime_h:
             description: Uptime of the instance in hours
-            type: integer
+            type: int
             sample: 35
         labels:
             description: A list of string labels that are associated with the instance
@@ -461,44 +474,44 @@ tagged_instances:
     contains:
         vm_id:
             description: vm id
-            type: integer
+            type: int
             sample: 153
         vm_name:
             description: vm name
-            type: string
+            type: str
             sample: foo
         template_id:
             description: vm's template id
-            type: integer
+            type: int
             sample: 153
         group_id:
             description: vm's group id
-            type: integer
+            type: int
             sample: 1
         group_name:
             description: vm's group name
-            type: string
+            type: str
             sample: one-users
         owner_id:
             description: vm's user id
-            type: integer
+            type: int
             sample: 143
         owner_name:
             description: vm's user name
-            type: string
+            type: str
             sample: app-user
         mode:
             description: vm's mode
-            type: string
+            type: str
             returned: success
             sample: 660
         state:
             description: state of an instance
-            type: string
+            type: str
             sample: ACTIVE
         lcm_state:
             description: lcm state of an instance that is only relevant when the state is ACTIVE
-            type: string
+            type: str
             sample: RUNNING
         cpu:
             description: Percentage of CPU divided by 100
@@ -510,11 +523,11 @@ tagged_instances:
             sample: 2
         memory:
             description: The size of the memory in MB
-            type: string
+            type: str
             sample: 4096 MB
         disk_size:
             description: The size of the disk in MB
-            type: string
+            type: str
             sample: 20480 MB
         networks:
             description: a list of dictionaries with info about IP, NAME, MAC, SECURITY_GROUPS for each NIC
@@ -535,7 +548,7 @@ tagged_instances:
                     ]
         uptime_h:
             description: Uptime of the instance in hours
-            type: integer
+            type: int
             sample: 35
         labels:
             description: A list of string labels that are associated with the instance
@@ -611,12 +624,12 @@ def get_vm_by_id(client, vm_id):
     # -2: All vms user can Use
     # -1: Vms belonging to the user and any of his groups - default
     # >= 0: UID User's vms
-    pool.info(filter=-2)
+    pool.info(filter=-2, range_start=int(vm_id), range_end=int(vm_id))
 
-    for vm in pool:
-        if str(vm.id) == str(vm_id):
-            return vm
-    return None
+    if len(pool) == 1:
+        return pool[0]
+    else:
+        return None
 
 
 def get_vms_by_ids(module, client, state, ids):
@@ -844,14 +857,14 @@ def create_nics_str(network_attrs_list):
     return nics_str
 
 
-def create_vm(module, client, template_id, attributes_dict, labels_list, disk_size, network_attrs_list):
+def create_vm(module, client, template_id, attributes_dict, labels_list, disk_size, network_attrs_list, vm_start_on_hold):
 
     if attributes_dict:
         vm_name = attributes_dict.get('NAME', '')
 
     disk_str = create_disk_str(module, client, template_id, disk_size)
     vm_extra_template_str = create_attributes_str(attributes_dict, labels_list) + create_nics_str(network_attrs_list) + disk_str
-    vm_id = client.call('template.instantiate', template_id, vm_name, False, vm_extra_template_str)
+    vm_id = client.call('template.instantiate', template_id, vm_name, vm_start_on_hold, vm_extra_template_str)
     vm = get_vm_by_id(client, vm_id)
 
     return get_vm_info(client, vm)
@@ -943,7 +956,7 @@ def get_all_vms_by_attributes(client, attributes_dict, labels_list):
     return vm_list
 
 
-def create_count_of_vms(module, client, template_id, count, attributes_dict, labels_list, disk_size, network_attrs_list, wait, wait_timeout):
+def create_count_of_vms(module, client, template_id, count, attributes_dict, labels_list, disk_size, network_attrs_list, wait, wait_timeout, vm_start_on_hold):
     new_vms_list = []
 
     vm_name = ''
@@ -972,21 +985,26 @@ def create_count_of_vms(module, client, template_id, count, attributes_dict, lab
             new_vm_name += next_index
         # Update NAME value in the attributes in case there is index
         attributes_dict['NAME'] = new_vm_name
-        new_vm_dict = create_vm(module, client, template_id, attributes_dict, labels_list, disk_size, network_attrs_list)
+        new_vm_dict = create_vm(module, client, template_id, attributes_dict, labels_list, disk_size, network_attrs_list, vm_start_on_hold)
         new_vm_id = new_vm_dict.get('vm_id')
         new_vm = get_vm_by_id(client, new_vm_id)
         new_vms_list.append(new_vm)
         count -= 1
 
-    if wait:
-        for vm in new_vms_list:
-            wait_for_running(module, vm, wait_timeout)
+    if vm_start_on_hold:
+        if wait:
+            for vm in new_vms_list:
+                wait_for_hold(module, vm, wait_timeout)
+    else:
+        if wait:
+            for vm in new_vms_list:
+                wait_for_running(module, vm, wait_timeout)
 
     return True, new_vms_list, []
 
 
 def create_exact_count_of_vms(module, client, template_id, exact_count, attributes_dict, count_attributes_dict,
-                              labels_list, count_labels_list, disk_size, network_attrs_list, hard, wait, wait_timeout):
+                              labels_list, count_labels_list, disk_size, network_attrs_list, hard, wait, wait_timeout, vm_start_on_hold):
 
     vm_list = get_all_vms_by_attributes(client, count_attributes_dict, count_labels_list)
 
@@ -1003,7 +1021,7 @@ def create_exact_count_of_vms(module, client, template_id, exact_count, attribut
     if vm_count_diff > 0:
         # Add more VMs
         changed, instances_list, tagged_instances = create_count_of_vms(module, client, template_id, vm_count_diff, attributes_dict,
-                                                                        labels_list, disk_size, network_attrs_list, wait, wait_timeout)
+                                                                        labels_list, disk_size, network_attrs_list, wait, wait_timeout, vm_start_on_hold)
 
         tagged_instances_list += instances_list
     elif vm_count_diff < 0:
@@ -1063,6 +1081,10 @@ def wait_for_running(module, vm, wait_timeout):
 
 def wait_for_done(module, vm, wait_timeout):
     return wait_for_state(module, vm, wait_timeout, lambda state, lcm_state: (state in [VM_STATES.index('DONE')]))
+
+
+def wait_for_hold(module, vm, wait_timeout):
+    return wait_for_state(module, vm, wait_timeout, lambda state, lcm_state: (state in [VM_STATES.index('HOLD')]))
 
 
 def wait_for_poweroff(module, vm, wait_timeout):
@@ -1220,8 +1242,8 @@ def get_connection_info(module):
     if not password:
         password = os.environ.get('ONE_PASSWORD')
 
-    if not(url and username and password):
-        module.fail_json(msg="One or more connection parameters (api_url, api_username, api_password) were not specified")
+    if not url:
+        module.fail_json(msg="Opennebula API url (api_url) is not specified")
     from collections import namedtuple
 
     auth_params = namedtuple('auth', ('url', 'username', 'password'))
@@ -1237,6 +1259,7 @@ def main():
         "instance_ids": {"required": False, "aliases": ['ids'], "type": "list"},
         "template_name": {"required": False, "type": "str"},
         "template_id": {"required": False, "type": "int"},
+        "vm_start_on_hold": {"default": False, "type": "bool"},
         "state": {
             "default": "present",
             "choices": ['present', 'absent', 'rebooted', 'poweredoff', 'running'],
@@ -1289,6 +1312,7 @@ def main():
     instance_ids = params.get('instance_ids')
     requested_template_name = params.get('template_name')
     requested_template_id = params.get('template_id')
+    put_vm_on_hold = params.get('vm_start_on_hold')
     state = params.get('state')
     permissions = params.get('mode')
     owner_id = params.get('owner_id')
@@ -1309,7 +1333,10 @@ def main():
     count_labels = params.get('count_labels')
     disk_saveas = params.get('disk_saveas')
 
-    client = oca.Client(auth.username + ':' + auth.password, auth.url)
+    if not (auth.username and auth.password):
+        client = oca.Client(None, auth.url)
+    else:
+        client = oca.Client(auth.username + ':' + auth.password, auth.url)
 
     if attributes:
         attributes = dict((key.upper(), value) for key, value in attributes.items())
@@ -1370,12 +1397,12 @@ def main():
         # Deploy an exact count of VMs
         changed, instances_list, tagged_instances_list = create_exact_count_of_vms(module, client, template_id, exact_count, attributes,
                                                                                    count_attributes, labels, count_labels, disk_size,
-                                                                                   networks, hard, wait, wait_timeout)
+                                                                                   networks, hard, wait, wait_timeout, put_vm_on_hold)
         vms = tagged_instances_list
     elif template_id is not None and state == 'present':
         # Deploy count VMs
         changed, instances_list, tagged_instances_list = create_count_of_vms(module, client, template_id, count,
-                                                                             attributes, labels, disk_size, networks, wait, wait_timeout)
+                                                                             attributes, labels, disk_size, networks, wait, wait_timeout, put_vm_on_hold)
         # instances_list - new instances
         # tagged_instances_list - all instances with specified `count_attributes` and `count_labels`
         vms = instances_list

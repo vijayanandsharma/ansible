@@ -26,12 +26,14 @@ options:
       - This parameter is required if the C(state) is equal to C(present).
       - This parameter is not required when C(state) is C(absent) and will be
         ignored if it is provided.
+    type: str
   license_server:
     description:
       - The F5 license server to use when getting a license and validating a dossier.
       - This parameter is required if the C(state) is equal to C(present).
       - This parameter is not required when C(state) is C(absent) and will be
         ignored if it is provided.
+    type: str
     default: activate.f5.com
   state:
     description:
@@ -39,10 +41,14 @@ options:
       - When C(present), only guarantees that a license is there.
       - When C(latest), ensures that the license is always valid.
       - When C(absent), removes the license on the system.
-    default: present
+      - When C(revoked), removes the license on the system and revokes its future usage
+        on the F5 license servers.
+    type: str
     choices:
       - absent
       - present
+      - revoked
+    default: present
   accept_eula:
     description:
       - Declares whether you accept the BIG-IP EULA or not. By default, this
@@ -53,6 +59,7 @@ options:
       - This parameter is not required when C(state) is C(absent) and will be
         ignored if it is provided.
     type: bool
+    default: no
 extends_documentation_fragment: f5
 author:
   - Tim Rupp (@caphrim007)
@@ -93,21 +100,15 @@ try:
     from library.module_utils.network.f5.bigip import F5RestClient
     from library.module_utils.network.f5.common import F5ModuleError
     from library.module_utils.network.f5.common import AnsibleF5Parameters
-    from library.module_utils.network.f5.common import cleanup_tokens
     from library.module_utils.network.f5.common import fq_name
     from library.module_utils.network.f5.common import f5_argument_spec
-    from library.module_utils.network.f5.common import exit_json
-    from library.module_utils.network.f5.common import fail_json
     from library.module_utils.network.f5.icontrol import iControlRestSession
 except ImportError:
     from ansible.module_utils.network.f5.bigip import F5RestClient
     from ansible.module_utils.network.f5.common import F5ModuleError
     from ansible.module_utils.network.f5.common import AnsibleF5Parameters
-    from ansible.module_utils.network.f5.common import cleanup_tokens
     from ansible.module_utils.network.f5.common import fq_name
     from ansible.module_utils.network.f5.common import f5_argument_spec
-    from ansible.module_utils.network.f5.common import exit_json
-    from ansible.module_utils.network.f5.common import fail_json
     from ansible.module_utils.network.f5.icontrol import iControlRestSession
 
 
@@ -338,7 +339,7 @@ class Difference(object):
 class ModuleManager(object):
     def __init__(self, *args, **kwargs):
         self.module = kwargs.get('module', None)
-        self.client = kwargs.get('client', None)
+        self.client = F5RestClient(**self.module.params)
         self.want = ModuleParameters(params=self.module.params, client=self.client)
         self.have = ApiParameters(client=self.client)
         self.changes = UsableChanges()
@@ -385,6 +386,8 @@ class ModuleManager(object):
             changed = self.present()
         elif state == "absent":
             changed = self.absent()
+        elif state == "revoked":
+            changed = self.revoke()
 
         reportable = ReportableChanges(params=self.changes.to_return())
         changes = reportable.to_return()
@@ -402,7 +405,7 @@ class ModuleManager(object):
             )
 
     def present(self):
-        if self.exists():
+        if self.exists() and not self.is_revoked():
             return False
         else:
             return self.create()
@@ -415,11 +418,67 @@ class ModuleManager(object):
             raise F5ModuleError("Failed to delete the resource.")
         return True
 
+    def revoke(self):
+        if self.is_revoked():
+            return False
+        else:
+            # When revoking a license, it should be acceptable to auto-accept the
+            # license since you accepted it the first time when you activated the
+            # license you are now revoking.
+            self.want.update({'accept_eula': True})
+
+            # Revoking seems to just be another way of saying "get me a new license".
+            # There appear to be revoke-specific wording in the license and I assume
+            # some special revoke-like signing is happening, but the process is essentially
+            # just another form of "create".
+            return self.create()
+
+    def revoke_from_device(self):
+        if self.module.check_mode:
+            return True
+
+        dossier = self.read_dossier_from_device()
+        if dossier:
+            self.want.update({'dossier': dossier})
+        else:
+            raise F5ModuleError("Dossier not generated.")
+
+        if self.is_revoked():
+            return False
+
+    def is_revoked(self):
+        command = '-c "egrep Revoked /config/bigip.license"'
+        params = dict(
+            command='run',
+            utilCmdArgs=command
+        )
+        uri = "https://{0}:{1}/mgmt/tm/util/bash".format(
+            self.client.provider['server'],
+            self.client.provider['server_port']
+        )
+        resp = self.client.api.post(uri, json=params)
+        try:
+            response = resp.json()
+        except ValueError as ex:
+            raise F5ModuleError(str(ex))
+
+        if 'code' in response and response['code'] in [400, 403]:
+            if 'message' in response:
+                raise F5ModuleError(response['message'])
+            else:
+                raise F5ModuleError(resp.content)
+        if 'commandResult' in response and 'Revoked' in response['commandResult']:
+            return True
+        return False
+
     def read_dossier_from_device(self):
         params = dict(
             command='run',
             utilCmdArgs='-b "{0}"'.format(self.want.license_key)
         )
+        if self.want.state == 'revoked':
+            params['utilCmdArgs'] = '-r ' + params['utilCmdArgs']
+
         uri = "https://{0}:{1}/mgmt/tm/util/get-dossier".format(
             self.client.provider['server'],
             self.client.provider['server_port']
@@ -436,7 +495,10 @@ class ModuleManager(object):
             else:
                 raise F5ModuleError(resp.content)
         try:
-            return response['commandResult']
+            if self.want.state == 'revoked':
+                return response['commandResult'][8:]
+            else:
+                return response['commandResult']
         except Exception:
             return None
 
@@ -455,13 +517,13 @@ class ModuleManager(object):
                     self.want.license_url,
                     data=self.want.license_envelope,
                 )
-            except Exception as ex:
+            except Exception:
                 continue
 
             try:
-                resp = LicenseXmlParser(content=resp._content)
+                resp = LicenseXmlParser(content=resp.content)
                 result = resp.json()
-            except F5ModuleError as ex:
+            except F5ModuleError:
                 # This error occurs when there is a problem with the license server and it
                 # starts returning invalid XML (like if they upgraded something and the server
                 # is redirecting improperly.
@@ -469,7 +531,7 @@ class ModuleManager(object):
                 # There's no way to recover from this error except by notifying F5 that there
                 # is an issue with the license server.
                 raise
-            except Exception as ex:
+            except Exception:
                 continue
 
             if result['state'] == 'EULA_REQUIRED':
@@ -554,7 +616,7 @@ class ModuleManager(object):
                     nops += 1
                 else:
                     nops = 0
-            except Exception as ex:
+            except Exception:
                 pass
             time.sleep(5)
 
@@ -583,7 +645,7 @@ class ModuleManager(object):
 
             if 'commandResult' in response:
                 return True
-        except Exception as ex:
+        except Exception:
             pass
         return False
 
@@ -790,7 +852,7 @@ class ArgumentSpec(object):
                 default='activate.f5.com'
             ),
             state=dict(
-                choices=['absent', 'present'],
+                choices=['absent', 'present', 'revoked'],
                 default='present'
             ),
             accept_eula=dict(
@@ -811,19 +873,16 @@ def main():
 
     module = AnsibleModule(
         argument_spec=spec.argument_spec,
-        supports_check_mode=spec.supports_check_mode
+        supports_check_mode=spec.supports_check_mode,
+        required_if=spec.required_if
     )
 
-    client = F5RestClient(**module.params)
-
     try:
-        mm = ModuleManager(module=module, client=client)
+        mm = ModuleManager(module=module)
         results = mm.exec_module()
-        cleanup_tokens(client)
-        exit_json(module, results, client)
+        module.exit_json(**results)
     except F5ModuleError as ex:
-        cleanup_tokens(client)
-        fail_json(module, ex, client)
+        module.fail_json(msg=str(ex))
 
 
 if __name__ == '__main__':

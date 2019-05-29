@@ -11,9 +11,8 @@ import json
 import pytest
 import sys
 
-from nose.plugins.skip import SkipTest
 if sys.version_info < (2, 7):
-    raise SkipTest("F5 Ansible modules require Python >= 2.7")
+    pytestmark = pytest.mark.skip("F5 Ansible modules require Python >= 2.7")
 
 from ansible.module_utils.basic import AnsibleModule
 
@@ -34,24 +33,22 @@ try:
 
     from test.units.modules.utils import set_module_args
 except ImportError:
-    try:
-        from ansible.modules.network.f5.bigip_gtm_wide_ip import ApiParameters
-        from ansible.modules.network.f5.bigip_gtm_wide_ip import ModuleParameters
-        from ansible.modules.network.f5.bigip_gtm_wide_ip import ModuleManager
-        from ansible.modules.network.f5.bigip_gtm_wide_ip import ArgumentSpec
-        from ansible.modules.network.f5.bigip_gtm_wide_ip import UntypedManager
-        from ansible.modules.network.f5.bigip_gtm_wide_ip import TypedManager
+    from ansible.modules.network.f5.bigip_gtm_wide_ip import ApiParameters
+    from ansible.modules.network.f5.bigip_gtm_wide_ip import ModuleParameters
+    from ansible.modules.network.f5.bigip_gtm_wide_ip import ModuleManager
+    from ansible.modules.network.f5.bigip_gtm_wide_ip import ArgumentSpec
+    from ansible.modules.network.f5.bigip_gtm_wide_ip import UntypedManager
+    from ansible.modules.network.f5.bigip_gtm_wide_ip import TypedManager
 
-        from ansible.module_utils.network.f5.common import F5ModuleError
+    from ansible.module_utils.network.f5.common import F5ModuleError
 
-        # Ansible 2.8 imports
-        from units.compat import unittest
-        from units.compat.mock import Mock
-        from units.compat.mock import patch
+    # Ansible 2.8 imports
+    from units.compat import unittest
+    from units.compat.mock import Mock
+    from units.compat.mock import patch
 
-        from units.modules.utils import set_module_args
-    except ImportError:
-        raise SkipTest("F5 Ansible modules require the f5-sdk Python library")
+    from units.modules.utils import set_module_args
+
 
 fixture_path = os.path.join(os.path.dirname(__file__), 'fixtures')
 fixture_data = {}
@@ -146,9 +143,11 @@ class TestUntypedManager(unittest.TestCase):
         set_module_args(dict(
             name='foo.baz.bar',
             lb_method='round-robin',
-            password='password',
-            server='localhost',
-            user='admin'
+            provider=dict(
+                server='localhost',
+                password='password',
+                user='admin'
+            )
         ))
 
         module = AnsibleModule(
@@ -160,6 +159,7 @@ class TestUntypedManager(unittest.TestCase):
         tm = UntypedManager(module=module, params=module.params)
         tm.exists = Mock(return_value=False)
         tm.create_on_device = Mock(return_value=True)
+        tm.version_is_less_than_12 = Mock(return_value=True)
 
         # Override methods to force specific logic in the module to happen
         mm = ModuleManager(module=module)
@@ -195,9 +195,11 @@ class TestTypedManager(unittest.TestCase):
             name='foo.baz.bar',
             lb_method='round-robin',
             type='a',
-            password='password',
-            server='localhost',
-            user='admin'
+            provider=dict(
+                server='localhost',
+                password='password',
+                user='admin'
+            )
         ))
 
         module = AnsibleModule(
@@ -209,6 +211,7 @@ class TestTypedManager(unittest.TestCase):
         tm = TypedManager(module=module, params=module.params)
         tm.exists = Mock(return_value=False)
         tm.create_on_device = Mock(return_value=True)
+        tm.version_is_less_than_12 = Mock(return_value=False)
 
         # Override methods to force specific logic in the module to happen
         mm = ModuleManager(module=module)
@@ -227,9 +230,11 @@ class TestTypedManager(unittest.TestCase):
             name='foo.baz.bar',
             lb_method='round_robin',
             type='a',
-            password='password',
-            server='localhost',
-            user='admin'
+            provider=dict(
+                server='localhost',
+                password='password',
+                user='admin'
+            )
         ))
 
         module = AnsibleModule(
@@ -241,6 +246,7 @@ class TestTypedManager(unittest.TestCase):
         tm = TypedManager(module=module, params=module.params)
         tm.exists = Mock(return_value=False)
         tm.create_on_device = Mock(return_value=True)
+        tm.version_is_less_than_12 = Mock(return_value=False)
 
         # Override methods to force specific logic in the module to happen
         mm = ModuleManager(module=module)
@@ -259,9 +265,11 @@ class TestTypedManager(unittest.TestCase):
             name='foo.baz.bar',
             lb_method='global_availability',
             type='a',
-            password='password',
-            server='localhost',
-            user='admin'
+            provider=dict(
+                server='localhost',
+                password='password',
+                user='admin'
+            )
         ))
 
         module = AnsibleModule(
@@ -273,6 +281,7 @@ class TestTypedManager(unittest.TestCase):
         tm = TypedManager(module=module, params=module.params)
         tm.exists = Mock(return_value=False)
         tm.create_on_device = Mock(return_value=True)
+        tm.version_is_less_than_12 = Mock(return_value=False)
 
         # Override methods to force specific logic in the module to happen
         mm = ModuleManager(module=module)
@@ -297,9 +306,11 @@ class TestTypedManager(unittest.TestCase):
                     ratio=10
                 )
             ],
-            password='password',
-            server='localhost',
-            user='admin'
+            provider=dict(
+                server='localhost',
+                password='password',
+                user='admin'
+            )
         ))
 
         module = AnsibleModule(
@@ -311,6 +322,7 @@ class TestTypedManager(unittest.TestCase):
         tm = TypedManager(module=module, params=module.params)
         tm.exists = Mock(return_value=False)
         tm.create_on_device = Mock(return_value=True)
+        tm.version_is_less_than_12 = Mock(return_value=False)
 
         # Override methods to force specific logic in the module to happen
         mm = ModuleManager(module=module)
@@ -335,9 +347,11 @@ class TestTypedManager(unittest.TestCase):
                     ratio=10
                 )
             ],
-            password='password',
-            server='localhost',
-            user='admin'
+            provider=dict(
+                server='localhost',
+                password='password',
+                user='admin'
+            )
         ))
 
         current = ApiParameters(params=load_fixture('load_gtm_wide_ip_with_pools.json'))
@@ -350,6 +364,7 @@ class TestTypedManager(unittest.TestCase):
         tm = TypedManager(module=module, params=module.params)
         tm.exists = Mock(return_value=True)
         tm.read_current_from_device = Mock(return_value=current)
+        tm.version_is_less_than_12 = Mock(return_value=False)
 
         # Override methods to force specific logic in the module to happen
         mm = ModuleManager(module=module)
@@ -375,9 +390,11 @@ class TestTypedManager(unittest.TestCase):
                     ratio=100
                 )
             ],
-            password='password',
-            server='localhost',
-            user='admin'
+            provider=dict(
+                server='localhost',
+                password='password',
+                user='admin'
+            )
         ))
 
         current = ApiParameters(params=load_fixture('load_gtm_wide_ip_with_pools.json'))
@@ -391,6 +408,7 @@ class TestTypedManager(unittest.TestCase):
         tm.exists = Mock(return_value=True)
         tm.read_current_from_device = Mock(return_value=current)
         tm.update_on_device = Mock(return_value=True)
+        tm.version_is_less_than_12 = Mock(return_value=False)
 
         # Override methods to force specific logic in the module to happen
         mm = ModuleManager(module=module)

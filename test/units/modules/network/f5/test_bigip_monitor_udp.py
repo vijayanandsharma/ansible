@@ -11,9 +11,8 @@ import json
 import pytest
 import sys
 
-from nose.plugins.skip import SkipTest
 if sys.version_info < (2, 7):
-    raise SkipTest("F5 Ansible modules require Python >= 2.7")
+    pytestmark = pytest.mark.skip("F5 Ansible modules require Python >= 2.7")
 
 from ansible.module_utils.basic import AnsibleModule
 
@@ -31,21 +30,19 @@ try:
 
     from test.units.modules.utils import set_module_args
 except ImportError:
-    try:
-        from ansible.modules.network.f5.bigip_monitor_udp import Parameters
-        from ansible.modules.network.f5.bigip_monitor_udp import ModuleManager
-        from ansible.modules.network.f5.bigip_monitor_udp import ArgumentSpec
+    from ansible.modules.network.f5.bigip_monitor_udp import Parameters
+    from ansible.modules.network.f5.bigip_monitor_udp import ModuleManager
+    from ansible.modules.network.f5.bigip_monitor_udp import ArgumentSpec
 
-        from ansible.module_utils.network.f5.common import F5ModuleError
+    from ansible.module_utils.network.f5.common import F5ModuleError
 
-        # Ansible 2.8 imports
-        from units.compat import unittest
-        from units.compat.mock import Mock
-        from units.compat.mock import patch
+    # Ansible 2.8 imports
+    from units.compat import unittest
+    from units.compat.mock import Mock
+    from units.compat.mock import patch
 
-        from units.modules.utils import set_module_args
-    except ImportError:
-        raise SkipTest("F5 Ansible modules require the f5-sdk Python library")
+    from units.modules.utils import set_module_args
+
 
 fixture_path = os.path.join(os.path.dirname(__file__), 'fixtures')
 fixture_data = {}
@@ -167,9 +164,11 @@ class TestManager(unittest.TestCase):
             timeout=30,
             time_until_up=60,
             partition='Common',
-            server='localhost',
-            password='password',
-            user='admin'
+            provider=dict(
+                server='localhost',
+                password='password',
+                user='admin'
+            )
         ))
 
         module = AnsibleModule(
@@ -199,9 +198,11 @@ class TestManager(unittest.TestCase):
             timeout=16,
             time_until_up=0,
             partition='Common',
-            server='localhost',
-            password='password',
-            user='admin'
+            provider=dict(
+                server='localhost',
+                password='password',
+                user='admin'
+            )
         ))
 
         current = Parameters(params=load_fixture('load_ltm_monitor_udp.json'))
@@ -224,9 +225,11 @@ class TestManager(unittest.TestCase):
             name='asdf',
             port=800,
             partition='Common',
-            server='localhost',
-            password='password',
-            user='admin'
+            provider=dict(
+                server='localhost',
+                password='password',
+                user='admin'
+            )
         ))
 
         current = Parameters(params=load_fixture('load_ltm_monitor_udp.json'))
@@ -251,9 +254,11 @@ class TestManager(unittest.TestCase):
             name='foo',
             interval=10,
             partition='Common',
-            server='localhost',
-            password='password',
-            user='admin'
+            provider=dict(
+                server='localhost',
+                password='password',
+                user='admin'
+            )
         ))
 
         current = Parameters(params=load_fixture('load_ltm_monitor_udp.json'))
@@ -278,9 +283,11 @@ class TestManager(unittest.TestCase):
             name='asdf',
             interval=30,
             partition='Common',
-            server='localhost',
-            password='password',
-            user='admin'
+            provider=dict(
+                server='localhost',
+                password='password',
+                user='admin'
+            )
         ))
 
         current = Parameters(params=load_fixture('load_ltm_monitor_udp.json'))
@@ -306,9 +313,11 @@ class TestManager(unittest.TestCase):
             interval=10,
             timeout=5,
             partition='Common',
-            server='localhost',
-            password='password',
-            user='admin'
+            provider=dict(
+                server='localhost',
+                password='password',
+                user='admin'
+            )
         ))
 
         current = Parameters(params=load_fixture('load_ltm_monitor_udp.json'))
@@ -333,9 +342,11 @@ class TestManager(unittest.TestCase):
             name='asdf',
             send='this is another send string',
             partition='Common',
-            server='localhost',
-            password='password',
-            user='admin'
+            provider=dict(
+                server='localhost',
+                password='password',
+                user='admin'
+            )
         ))
 
         current = Parameters(params=load_fixture('load_ltm_monitor_udp.json'))
@@ -360,9 +371,11 @@ class TestManager(unittest.TestCase):
             name='asdf',
             receive='this is another receive string',
             partition='Common',
-            server='localhost',
-            password='password',
-            user='admin'
+            provider=dict(
+                server='localhost',
+                password='password',
+                user='admin'
+            )
         ))
 
         current = Parameters(params=load_fixture('load_ltm_monitor_udp.json'))
@@ -387,9 +400,11 @@ class TestManager(unittest.TestCase):
             name='asdf',
             timeout=300,
             partition='Common',
-            server='localhost',
-            password='password',
-            user='admin'
+            provider=dict(
+                server='localhost',
+                password='password',
+                user='admin'
+            )
         ))
 
         current = Parameters(params=load_fixture('load_ltm_monitor_udp.json'))
@@ -414,9 +429,11 @@ class TestManager(unittest.TestCase):
             name='asdf',
             time_until_up=300,
             partition='Common',
-            server='localhost',
-            password='password',
-            user='admin'
+            provider=dict(
+                server='localhost',
+                password='password',
+                user='admin'
+            )
         ))
 
         current = Parameters(params=load_fixture('load_ltm_monitor_udp.json'))

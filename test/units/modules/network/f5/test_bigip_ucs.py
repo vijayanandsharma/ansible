@@ -11,9 +11,8 @@ import json
 import pytest
 import sys
 
-from nose.plugins.skip import SkipTest
 if sys.version_info < (2, 7):
-    raise SkipTest("F5 Ansible modules require Python >= 2.7")
+    pytestmark = pytest.mark.skip("F5 Ansible modules require Python >= 2.7")
 
 from ansible.module_utils.basic import AnsibleModule
 
@@ -33,23 +32,21 @@ try:
 
     from test.units.modules.utils import set_module_args
 except ImportError:
-    try:
-        from ansible.modules.network.f5.bigip_ucs import ModuleParameters
-        from ansible.modules.network.f5.bigip_ucs import ModuleManager
-        from ansible.modules.network.f5.bigip_ucs import ArgumentSpec
-        from ansible.modules.network.f5.bigip_ucs import V1Manager
-        from ansible.modules.network.f5.bigip_ucs import V2Manager
+    from ansible.modules.network.f5.bigip_ucs import ModuleParameters
+    from ansible.modules.network.f5.bigip_ucs import ModuleManager
+    from ansible.modules.network.f5.bigip_ucs import ArgumentSpec
+    from ansible.modules.network.f5.bigip_ucs import V1Manager
+    from ansible.modules.network.f5.bigip_ucs import V2Manager
 
-        from ansible.module_utils.network.f5.common import F5ModuleError
+    from ansible.module_utils.network.f5.common import F5ModuleError
 
-        # Ansible 2.8 imports
-        from units.compat import unittest
-        from units.compat.mock import Mock
-        from units.compat.mock import patch
+    # Ansible 2.8 imports
+    from units.compat import unittest
+    from units.compat.mock import Mock
+    from units.compat.mock import patch
 
-        from units.modules.utils import set_module_args
-    except ImportError:
-        raise SkipTest("F5 Ansible modules require the f5-sdk Python library")
+    from units.modules.utils import set_module_args
+
 
 fixture_path = os.path.join(os.path.dirname(__file__), 'fixtures')
 fixture_data = {}
@@ -155,10 +152,12 @@ class TestV1Manager(unittest.TestCase):
     def test_ucs_explicit_present(self, *args):
         set_module_args(dict(
             ucs="/root/bigip.localhost.localdomain.ucs",
-            server='localhost',
-            password='password',
-            user='admin',
-            state='present'
+            state='present',
+            provider=dict(
+                server='localhost',
+                password='password',
+                user='admin'
+            )
         ))
 
         module = AnsibleModule(
@@ -181,10 +180,12 @@ class TestV1Manager(unittest.TestCase):
     def test_ucs_installed(self, *args):
         set_module_args(dict(
             ucs="/root/bigip.localhost.localdomain.ucs",
-            server='localhost',
-            password='password',
-            user='admin',
-            state='installed'
+            state='installed',
+            provider=dict(
+                server='localhost',
+                password='password',
+                user='admin'
+            )
         ))
 
         module = AnsibleModule(
@@ -208,10 +209,12 @@ class TestV1Manager(unittest.TestCase):
     def test_ucs_absent_exists(self, *args):
         set_module_args(dict(
             ucs="/root/bigip.localhost.localdomain.ucs",
-            server='localhost',
-            password='password',
-            user='admin',
-            state='absent'
+            state='absent',
+            provider=dict(
+                server='localhost',
+                password='password',
+                user='admin'
+            )
         ))
 
         module = AnsibleModule(
@@ -234,10 +237,12 @@ class TestV1Manager(unittest.TestCase):
     def test_ucs_absent_fails(self, *args):
         set_module_args(dict(
             ucs="/root/bigip.localhost.localdomain.ucs",
-            server='localhost',
-            password='password',
-            user='admin',
-            state='absent'
+            state='absent',
+            provider=dict(
+                server='localhost',
+                password='password',
+                user='admin'
+            )
         ))
 
         module = AnsibleModule(
@@ -266,9 +271,11 @@ class TestV2Manager(unittest.TestCase):
     def test_ucs_default_present(self, *args):
         set_module_args(dict(
             ucs="/root/bigip.localhost.localdomain.ucs",
-            server='localhost',
-            password='password',
-            user='admin'
+            provider=dict(
+                server='localhost',
+                password='password',
+                user='admin'
+            )
         ))
 
         module = AnsibleModule(
@@ -291,10 +298,12 @@ class TestV2Manager(unittest.TestCase):
     def test_ucs_explicit_present(self, *args):
         set_module_args(dict(
             ucs="/root/bigip.localhost.localdomain.ucs",
-            server='localhost',
-            password='password',
-            user='admin',
-            state='present'
+            state='present',
+            provider=dict(
+                server='localhost',
+                password='password',
+                user='admin'
+            )
         ))
 
         module = AnsibleModule(
@@ -317,10 +326,12 @@ class TestV2Manager(unittest.TestCase):
     def test_ucs_installed(self, *args):
         set_module_args(dict(
             ucs="/root/bigip.localhost.localdomain.ucs",
-            server='localhost',
-            password='password',
-            user='admin',
-            state='installed'
+            state='installed',
+            provider=dict(
+                server='localhost',
+                password='password',
+                user='admin'
+            )
         ))
 
         module = AnsibleModule(
@@ -344,10 +355,12 @@ class TestV2Manager(unittest.TestCase):
     def test_ucs_absent_exists(self, *args):
         set_module_args(dict(
             ucs="/root/bigip.localhost.localdomain.ucs",
-            server='localhost',
-            password='password',
-            user='admin',
-            state='absent'
+            state='absent',
+            provider=dict(
+                server='localhost',
+                password='password',
+                user='admin'
+            )
         ))
 
         module = AnsibleModule(
@@ -370,10 +383,12 @@ class TestV2Manager(unittest.TestCase):
     def test_ucs_absent_fails(self, *args):
         set_module_args(dict(
             ucs="/root/bigip.localhost.localdomain.ucs",
-            server='localhost',
-            password='password',
-            user='admin',
-            state='absent'
+            state='absent',
+            provider=dict(
+                server='localhost',
+                password='password',
+                user='admin'
+            )
         ))
 
         module = AnsibleModule(

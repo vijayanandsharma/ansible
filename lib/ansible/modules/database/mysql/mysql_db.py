@@ -1,20 +1,18 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 
-# (c) 2012, Mark Theunissen <mark.theunissen@gmail.com>
+# Copyright: (c) 2012, Mark Theunissen <mark.theunissen@gmail.com>
 # Sponsored by Four Kitchens http://fourkitchens.com.
 # GNU General Public License v3.0+ (see COPYING or https://www.gnu.org/licenses/gpl-3.0.txt)
 
 from __future__ import absolute_import, division, print_function
 __metaclass__ = type
 
-
 ANSIBLE_METADATA = {'metadata_version': '1.1',
                     'status': ['preview'],
                     'supported_by': 'community'}
 
-
-DOCUMENTATION = '''
+DOCUMENTATION = r'''
 ---
 module: mysql_db
 short_description: Add or remove MySQL databases from a remote host.
@@ -67,13 +65,12 @@ requirements:
    - mysql (command line binary)
    - mysqldump (command line binary)
 notes:
-   - Requires the PyMySQL (Python 2.7 and Python 3.X) or MySQL-python (Python 2.X) package on the remote host,
-     as well as mysql and mysqldump binaries.
+   - Requires the mysql and mysqldump binaries on the remote host.
    - This module is B(not idempotent) when I(state) is C(import), and will import the dump file each time if run more than once.
 extends_documentation_fragment: mysql
 '''
 
-EXAMPLES = '''
+EXAMPLES = r'''
 - name: Create a new database with name 'bobdata'
   mysql_db:
     name: bobdata
@@ -104,13 +101,13 @@ EXAMPLES = '''
 '''
 
 import os
-import pipes
 import subprocess
 import traceback
 
 from ansible.module_utils.basic import AnsibleModule
 from ansible.module_utils.database import mysql_quote_identifier
 from ansible.module_utils.mysql import mysql_connect, mysql_driver, mysql_driver_fail_msg
+from ansible.module_utils.six.moves import shlex_quote
 from ansible.module_utils._text import to_native
 
 
@@ -135,25 +132,25 @@ def db_dump(module, host, user, password, db_name, target, all_databases, port, 
     cmd = module.get_bin_path('mysqldump', True)
     # If defined, mysqldump demands --defaults-extra-file be the first option
     if config_file:
-        cmd += " --defaults-extra-file=%s" % pipes.quote(config_file)
+        cmd += " --defaults-extra-file=%s" % shlex_quote(config_file)
     if user is not None:
-        cmd += " --user=%s" % pipes.quote(user)
+        cmd += " --user=%s" % shlex_quote(user)
     if password is not None:
-        cmd += " --password=%s" % pipes.quote(password)
+        cmd += " --password=%s" % shlex_quote(password)
     if ssl_cert is not None:
-        cmd += " --ssl-cert=%s" % pipes.quote(ssl_cert)
+        cmd += " --ssl-cert=%s" % shlex_quote(ssl_cert)
     if ssl_key is not None:
-        cmd += " --ssl-key=%s" % pipes.quote(ssl_key)
-    if ssl_cert is not None:
-        cmd += " --ssl-ca=%s" % pipes.quote(ssl_ca)
+        cmd += " --ssl-key=%s" % shlex_quote(ssl_key)
+    if ssl_ca is not None:
+        cmd += " --ssl-ca=%s" % shlex_quote(ssl_ca)
     if socket is not None:
-        cmd += " --socket=%s" % pipes.quote(socket)
+        cmd += " --socket=%s" % shlex_quote(socket)
     else:
-        cmd += " --host=%s --port=%i" % (pipes.quote(host), port)
+        cmd += " --host=%s --port=%i" % (shlex_quote(host), port)
     if all_databases:
         cmd += " --all-databases"
     else:
-        cmd += " %s" % pipes.quote(db_name)
+        cmd += " %s" % shlex_quote(db_name)
     if single_transaction:
         cmd += " --single-transaction=true"
     if quick:
@@ -171,9 +168,9 @@ def db_dump(module, host, user, password, db_name, target, all_databases, port, 
         path = module.get_bin_path('xz', True)
 
     if path:
-        cmd = '%s | %s > %s' % (cmd, path, pipes.quote(target))
+        cmd = '%s | %s > %s' % (cmd, path, shlex_quote(target))
     else:
-        cmd += " > %s" % pipes.quote(target)
+        cmd += " > %s" % shlex_quote(target)
 
     rc, stdout, stderr = module.run_command(cmd, use_unsafe_shell=True)
     return rc, stdout, stderr
@@ -186,25 +183,25 @@ def db_import(module, host, user, password, db_name, target, all_databases, port
     cmd = [module.get_bin_path('mysql', True)]
     # --defaults-file must go first, or errors out
     if config_file:
-        cmd.append("--defaults-extra-file=%s" % pipes.quote(config_file))
+        cmd.append("--defaults-extra-file=%s" % shlex_quote(config_file))
     if user:
-        cmd.append("--user=%s" % pipes.quote(user))
+        cmd.append("--user=%s" % shlex_quote(user))
     if password:
-        cmd.append("--password=%s" % pipes.quote(password))
-    if socket is not None:
-        cmd.append("--socket=%s" % pipes.quote(socket))
+        cmd.append("--password=%s" % shlex_quote(password))
     if ssl_cert is not None:
-        cmd.append("--ssl-cert=%s" % pipes.quote(ssl_cert))
+        cmd.append("--ssl-cert=%s" % shlex_quote(ssl_cert))
     if ssl_key is not None:
-        cmd.append("--ssl-key=%s" % pipes.quote(ssl_key))
-    if ssl_cert is not None:
-        cmd.append("--ssl-ca=%s" % pipes.quote(ssl_ca))
+        cmd.append("--ssl-key=%s" % shlex_quote(ssl_key))
+    if ssl_ca is not None:
+        cmd.append("--ssl-ca=%s" % shlex_quote(ssl_ca))
+    if socket is not None:
+        cmd.append("--socket=%s" % shlex_quote(socket))
     else:
-        cmd.append("--host=%s" % pipes.quote(host))
+        cmd.append("--host=%s" % shlex_quote(host))
         cmd.append("--port=%i" % port)
     if not all_databases:
         cmd.append("-D")
-        cmd.append(pipes.quote(db_name))
+        cmd.append(shlex_quote(db_name))
 
     comp_prog_path = None
     if os.path.splitext(target)[-1] == '.gz':
@@ -227,7 +224,7 @@ def db_import(module, host, user, password, db_name, target, all_databases, port
             return p2.returncode, stdout2, stderr2
     else:
         cmd = ' '.join(cmd)
-        cmd += " < %s" % pipes.quote(target)
+        cmd += " < %s" % shlex_quote(target)
         rc, stdout, stderr = module.run_command(cmd, use_unsafe_shell=True)
         return rc, stdout, stderr
 
@@ -251,26 +248,26 @@ def db_create(cursor, db, encoding, collation):
 def main():
     module = AnsibleModule(
         argument_spec=dict(
-            login_user=dict(default=None),
-            login_password=dict(default=None, no_log=True),
-            login_host=dict(default="localhost"),
-            login_port=dict(default=3306, type='int'),
-            login_unix_socket=dict(default=None),
-            name=dict(required=True, aliases=['db']),
-            encoding=dict(default=""),
-            collation=dict(default=""),
-            target=dict(default=None, type='path'),
-            state=dict(default="present", choices=["absent", "present", "dump", "import"]),
-            ssl_cert=dict(default=None, type='path'),
-            ssl_key=dict(default=None, type='path'),
-            ssl_ca=dict(default=None, type='path'),
-            connect_timeout=dict(default=30, type='int'),
-            config_file=dict(default="~/.my.cnf", type='path'),
-            single_transaction=dict(default=False, type='bool'),
-            quick=dict(default=True, type='bool'),
-            ignore_tables=dict(default=[], type='list')
+            login_user=dict(type='str'),
+            login_password=dict(type='str', no_log=True),
+            login_host=dict(type='str', default='localhost'),
+            login_port=dict(type='int', default=3306),
+            login_unix_socket=dict(type='str'),
+            name=dict(type='str', required=True, aliases=['db']),
+            encoding=dict(type='str', default=''),
+            collation=dict(type='str', default=''),
+            target=dict(type='path'),
+            state=dict(type='str', default='present', choices=['absent', 'dump', 'import', 'present']),
+            client_cert=dict(type='path', aliases=['ssl_cert']),
+            client_key=dict(type='path', aliases=['ssl_key']),
+            ca_cert=dict(type='path', aliases=['ssl_ca']),
+            connect_timeout=dict(type='int', default=30),
+            config_file=dict(type='path', default='~/.my.cnf'),
+            single_transaction=dict(type='bool', default=False),
+            quick=dict(type='bool', default=True),
+            ignore_tables=dict(type='list', default=[]),
         ),
-        supports_check_mode=True
+        supports_check_mode=True,
     )
 
     if mysql_driver is None:
@@ -285,9 +282,9 @@ def main():
     login_port = module.params["login_port"]
     if login_port < 0 or login_port > 65535:
         module.fail_json(msg="login_port must be a valid unix port number (0-65535)")
-    ssl_cert = module.params["ssl_cert"]
-    ssl_key = module.params["ssl_key"]
-    ssl_ca = module.params["ssl_ca"]
+    ssl_cert = module.params["client_cert"]
+    ssl_key = module.params["client_key"]
+    ssl_ca = module.params["ca_cert"]
     connect_timeout = module.params['connect_timeout']
     config_file = module.params['config_file']
     login_password = module.params["login_password"]

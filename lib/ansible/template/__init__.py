@@ -20,15 +20,13 @@ from __future__ import (absolute_import, division, print_function)
 __metaclass__ = type
 
 import ast
-import contextlib
 import datetime
 import os
+import pkgutil
 import pwd
 import re
 import time
 
-from functools import wraps
-from io import StringIO
 from numbers import Number
 
 try:
@@ -42,20 +40,23 @@ from jinja2.runtime import Context, StrictUndefined
 
 from ansible import constants as C
 from ansible.errors import AnsibleError, AnsibleFilterError, AnsibleUndefinedVariable, AnsibleAssertionError
-from ansible.module_utils.six import string_types, text_type
+from ansible.module_utils.six import iteritems, string_types, text_type
 from ansible.module_utils._text import to_native, to_text, to_bytes
-from ansible.module_utils.common._collections_compat import Sequence, Mapping
+from ansible.module_utils.common._collections_compat import Sequence, Mapping, MutableMapping
 from ansible.plugins.loader import filter_loader, lookup_loader, test_loader
 from ansible.template.safe_eval import safe_eval
 from ansible.template.template import AnsibleJ2Template
 from ansible.template.vars import AnsibleJ2Vars
+from ansible.utils.display import Display
 from ansible.utils.unsafe_proxy import UnsafeProxy, wrap_var
 
+# HACK: keep Python 2.6 controller tests happy in CI until they're properly split
 try:
-    from __main__ import display
+    from importlib import import_module
 except ImportError:
-    from ansible.utils.display import Display
-    display = Display()
+    import_module = __import__
+
+display = Display()
 
 
 __all__ = ['Templar', 'generate_ansible_template_vars']
@@ -77,25 +78,32 @@ if C.DEFAULT_JINJA2_NATIVE:
     except ImportError:
         from jinja2 import Environment
         from jinja2.utils import concat as j2_concat
+        from jinja2 import __version__ as j2_version
+        display.warning(
+            'jinja2_native requires Jinja 2.10 and above. '
+            'Version detected: %s. Falling back to default.' % j2_version
+        )
 else:
     from jinja2 import Environment
     from jinja2.utils import concat as j2_concat
 
 
-def generate_ansible_template_vars(path):
+def generate_ansible_template_vars(path, dest_path=None):
     b_path = to_bytes(path)
     try:
         template_uid = pwd.getpwuid(os.stat(b_path).st_uid).pw_name
     except (KeyError, TypeError):
         template_uid = os.stat(b_path).st_uid
 
-    temp_vars = {}
-    temp_vars['template_host'] = to_text(os.uname()[1])
-    temp_vars['template_path'] = path
-    temp_vars['template_mtime'] = datetime.datetime.fromtimestamp(os.path.getmtime(b_path))
-    temp_vars['template_uid'] = to_text(template_uid)
-    temp_vars['template_fullpath'] = os.path.abspath(path)
-    temp_vars['template_run_date'] = datetime.datetime.now()
+    temp_vars = {
+        'template_host': to_text(os.uname()[1]),
+        'template_path': path,
+        'template_mtime': datetime.datetime.fromtimestamp(os.path.getmtime(b_path)),
+        'template_uid': to_text(template_uid),
+        'template_fullpath': os.path.abspath(path),
+        'template_run_date': datetime.datetime.now(),
+        'template_destpath': to_native(dest_path) if dest_path else None,
+    }
 
     managed_default = C.DEFAULT_MANAGED_STR
     managed_str = managed_default.format(
@@ -169,24 +177,35 @@ def _count_newlines_from_end(in_str):
         return i
 
 
-def tests_as_filters_warning(name, func):
-    '''
-    Closure to enable displaying a deprecation warning when tests are used as a filter
+def recursive_check_defined(item):
+    from jinja2.runtime import Undefined
 
-    This closure is only used when registering ansible provided tests as filters
+    if isinstance(item, MutableMapping):
+        for key in item:
+            recursive_check_defined(item[key])
+    elif isinstance(item, list):
+        for i in item:
+            recursive_check_defined(i)
+    else:
+        if isinstance(item, Undefined):
+            raise AnsibleFilterError("{0} is undefined".format(item))
 
-    This function should be removed in 2.9 along with registering ansible provided tests as filters
-    in Templar._get_filters
+
+class AnsibleUndefined(StrictUndefined):
     '''
-    @wraps(func)
-    def wrapper(*args, **kwargs):
-        display.deprecated(
-            'Using tests as filters is deprecated. Instead of using `result|%(name)s` use '
-            '`result is %(name)s`' % dict(name=name),
-            version='2.9'
-        )
-        return func(*args, **kwargs)
-    return wrapper
+    A custom Undefined class, which returns further Undefined objects on access,
+    rather than throwing an exception.
+    '''
+    def __getattr__(self, name):
+        # Return original Undefined object to preserve the first failure context
+        return self
+
+    def __getitem__(self, key):
+        # Return original Undefined object to preserve the first failure context
+        return self
+
+    def __repr__(self):
+        return 'AnsibleUndefined'
 
 
 class AnsibleContext(Context):
@@ -238,6 +257,83 @@ class AnsibleContext(Context):
         return val
 
 
+class JinjaPluginIntercept(MutableMapping):
+    def __init__(self, delegatee, pluginloader, *args, **kwargs):
+        super(JinjaPluginIntercept, self).__init__(*args, **kwargs)
+        self._delegatee = delegatee
+        self._pluginloader = pluginloader
+
+        if self._pluginloader.class_name == 'FilterModule':
+            self._method_map_name = 'filters'
+            self._dirname = 'filter'
+        elif self._pluginloader.class_name == 'TestModule':
+            self._method_map_name = 'tests'
+            self._dirname = 'test'
+
+        self._collection_jinja_func_cache = {}
+
+    # FUTURE: we can cache FQ filter/test calls for the entire duration of a run, since a given collection's impl's
+    # aren't supposed to change during a run
+    def __getitem__(self, key):
+        if not isinstance(key, string_types):
+            raise ValueError('key must be a string')
+
+        key = to_native(key)
+
+        if '.' not in key:  # might be a built-in value, delegate to base dict
+            return self._delegatee.__getitem__(key)
+
+        func = self._collection_jinja_func_cache.get(key)
+
+        if func:
+            return func
+
+        components = key.split('.')
+
+        if len(components) != 3:
+            raise KeyError('invalid plugin name: {0}'.format(key))
+
+        collection_name = '.'.join(components[0:2])
+        collection_pkg = 'ansible_collections.{0}.plugins.{1}'.format(collection_name, self._dirname)
+
+        # FIXME: error handling for bogus plugin name, bogus impl, bogus filter/test
+
+        # FIXME: move this capability into the Jinja plugin loader
+        pkg = import_module(collection_pkg)
+
+        for dummy, module_name, ispkg in pkgutil.iter_modules(pkg.__path__, prefix=collection_name + '.'):
+            if ispkg:
+                continue
+
+            plugin_impl = self._pluginloader.get(module_name)
+
+            method_map = getattr(plugin_impl, self._method_map_name)
+
+            for f in iteritems(method_map()):
+                fq_name = '.'.join((collection_name, f[0]))
+                self._collection_jinja_func_cache[fq_name] = f[1]
+
+            function_impl = self._collection_jinja_func_cache[key]
+
+        # FIXME: detect/warn on intra-collection function name collisions
+
+        return function_impl
+
+    def __setitem__(self, key, value):
+        return self._delegatee.__setitem__(key, value)
+
+    def __delitem__(self, key):
+        raise NotImplementedError()
+
+    def __iter__(self):
+        # not strictly accurate since we're not counting dynamically-loaded values
+        return iter(self._delegatee)
+
+    def __len__(self):
+        # not strictly accurate since we're not counting dynamically-loaded values
+        return len(self._delegatee)
+
+
 class AnsibleEnvironment(Environment):
     '''
     Our custom environment, which simply allows us to override the class-level
@@ -245,6 +341,12 @@ class AnsibleEnvironment(Environment):
     '''
     context_class = AnsibleContext
     template_class = AnsibleJ2Template
+
+    def __init__(self, *args, **kwargs):
+        super(AnsibleEnvironment, self).__init__(*args, **kwargs)
+
+        self.filters = JinjaPluginIntercept(self.filters, filter_loader)
+        self.tests = JinjaPluginIntercept(self.tests, test_loader)
 
 
 class Templar:
@@ -283,7 +385,7 @@ class Templar:
 
         self.environment = AnsibleEnvironment(
             trim_blocks=True,
-            undefined=StrictUndefined,
+            undefined=AnsibleUndefined,
             extensions=self._get_extensions(),
             finalize=self._finalize,
             loader=FileSystemLoader(self._basedir),
@@ -312,13 +414,6 @@ class Templar:
             return self._filters.copy()
 
         self._filters = dict()
-
-        # TODO: Remove registering tests as filters in 2.9
-        for name, func in self._get_tests().items():
-            if name in builtin_filters:
-                # If we have a custom test named the same as a builtin filter, don't register as a filter
-                continue
-            self._filters[name] = tests_as_filters_warning(name, func)
 
         for fp in self._filter_loader.all():
             self._filters.update(fp.filters())
@@ -355,7 +450,12 @@ class Templar:
 
         return jinja_exts
 
-    def set_available_variables(self, variables):
+    @property
+    def available_variables(self):
+        return self._available_variables
+
+    @available_variables.setter
+    def available_variables(self, variables):
         '''
         Sets the list of template variables this Templar instance will use
         to template things, so we don't have to pass them around between
@@ -367,6 +467,13 @@ class Templar:
             raise AnsibleAssertionError("the type of 'variables' should be a dict but was a %s" % (type(variables)))
         self._available_variables = variables
         self._cached_result = {}
+
+    def set_available_variables(self, variables):
+        display.deprecated(
+            'set_available_variables is being deprecated. Use "@available_variables.setter" instead.',
+            version='2.13'
+        )
+        self.available_variables = variables
 
     def template(self, variable, convert_bare=False, preserve_trailing_newlines=True, escape_backslashes=True, fail_on_undefined=None, overrides=None,
                  convert_data=True, static_vars=None, cache=True, disable_lookups=False):
@@ -493,7 +600,7 @@ class Templar:
                 new = self.do_template(data, fail_on_undefined=True)
             except (AnsibleUndefinedVariable, UndefinedError):
                 return True
-            except:
+            except Exception:
                 return False
             return (new != data)
         elif isinstance(data, (list, tuple)):
@@ -513,7 +620,7 @@ class Templar:
         templatable = True
         try:
             self.template(data)
-        except:
+        except Exception:
             templatable = False
         return templatable
 
@@ -556,6 +663,18 @@ class Templar:
 
     def _fail_lookup(self, name, *args, **kwargs):
         raise AnsibleError("The lookup `%s` was found, however lookups were disabled from templating" % name)
+
+    def _now_datetime(self, utc=False, fmt=None):
+        '''jinja2 global function to return current datetime, potentially formatted via strftime'''
+        if utc:
+            now = datetime.datetime.utcnow()
+        else:
+            now = datetime.datetime.now()
+
+        if fmt:
+            return now.strftime(fmt)
+
+        return now
 
     def _query_lookup(self, name, *args, **kwargs):
         ''' wrapper for lookup, force wantlist true'''
@@ -661,11 +780,16 @@ class Templar:
                 else:
                     return data
 
+            # jinja2 global is inconsistent across versions, this normalizes them
+            t.globals['dict'] = dict
+
             if disable_lookups:
                 t.globals['query'] = t.globals['q'] = t.globals['lookup'] = self._fail_lookup
             else:
                 t.globals['lookup'] = self._lookup
                 t.globals['query'] = t.globals['q'] = self._query_lookup
+
+            t.globals['now'] = self._now_datetime
 
             t.globals['finalize'] = self._finalize
 
@@ -679,12 +803,12 @@ class Templar:
                 if getattr(new_context, 'unsafe', False):
                     res = wrap_var(res)
             except TypeError as te:
-                if 'StrictUndefined' in to_native(te):
+                if 'AnsibleUndefined' in to_native(te):
                     errmsg = "Unable to look up a name or access an attribute in template string (%s).\n" % to_native(data)
                     errmsg += "Make sure your variable name does not contain invalid characters like '-': %s" % to_native(te)
                     raise AnsibleUndefinedVariable(errmsg)
                 else:
-                    display.debug("failing because of a type error, template data is: %s" % to_native(data))
+                    display.debug("failing because of a type error, template data is: %s" % to_text(data))
                     raise AnsibleError("Unexpected templating type error occurred on (%s): %s" % (to_native(data), to_native(te)))
 
             if USE_JINJA2_NATIVE and not isinstance(res, string_types):

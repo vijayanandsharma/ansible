@@ -50,6 +50,7 @@ class BaseTemplar(object):
             some_unsafe_var=wrap_var("unsafe_blip"),
             some_static_unsafe_var=wrap_var("static_unsafe_blip"),
             some_unsafe_keyword=wrap_var("{{ foo }}"),
+            str_with_error="{{ 'str' | from_json }}",
         )
         self.fake_loader = DictDataLoader({
             "/path/to/my_file.txt": "foo\n",
@@ -183,6 +184,10 @@ class TestTemplarTemplate(BaseTemplar, unittest.TestCase):
                                 self.templar.template,
                                 data)
 
+    def test_template_with_error(self):
+        """Check that AnsibleError is raised, fail if an unhandled exception is raised"""
+        self.assertRaises(AnsibleError, self.templar.template, "{{ str_with_error }}")
+
 
 class TestTemplarMisc(BaseTemplar, unittest.TestCase):
     def test_templar_simple(self):
@@ -212,11 +217,17 @@ class TestTemplarMisc(BaseTemplar, unittest.TestCase):
         # test with fail_on_undefined=False
         self.assertEqual(templar.template("{{bad_var}}", fail_on_undefined=False), "{{bad_var}}")
 
-        # test set_available_variables()
-        templar.set_available_variables(variables=dict(foo="bam"))
+        # test setting available_variables
+        templar.available_variables = dict(foo="bam")
         self.assertEqual(templar.template("{{foo}}"), "bam")
-        # variables must be a dict() for set_available_variables()
-        self.assertRaises(AssertionError, templar.set_available_variables, "foo=bam")
+        # variables must be a dict() for available_variables setter
+        # FIXME Use assertRaises() as a context manager (added in 2.7) once we do not run tests on Python 2.6 anymore.
+        try:
+            templar.available_variables = "foo=bam"
+        except AssertionError as e:
+            pass
+        except Exception:
+            self.fail(e)
 
     def test_templar_escape_backslashes(self):
         # Rule of thumb: If escape backslashes is True you should end up with

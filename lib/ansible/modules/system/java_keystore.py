@@ -28,15 +28,15 @@ options:
     certificate:
         description:
           - Certificate that should be used to create the key store.
-        required: false
+        required: true
     private_key:
         description:
           - Private key that should be used to create the key store.
-        required: false
+        required: true
     password:
         description:
           - Password that should be used to secure the key store.
-        required: false
+        required: true
     dest:
         description:
           - Absolute path where the jks should be generated.
@@ -60,7 +60,7 @@ options:
         type: bool
         default: 'no'
 requirements: [openssl, keytool]
-author: Guillaume Grossetie
+author: Guillaume Grossetie (@Mogztter)
 '''
 
 EXAMPLES = '''
@@ -93,7 +93,7 @@ RETURN = '''
 msg:
   description: Output from stdout of keytool/openssl command after execution of given command or an error.
   returned: changed and failure
-  type: string
+  type: str
   sample: "Unable to find the current certificate fingerprint in ..."
 
 rc:
@@ -105,7 +105,7 @@ rc:
 cmd:
   description: Executed command to get action done
   returned: changed and failure
-  type: string
+  type: str
   sample: "openssl x509 -noout -in /tmp/cert.crt -fingerprint -sha1"
 '''
 
@@ -163,7 +163,7 @@ def run_commands(module, cmd, check_rc=True):
 
 
 def create_file(path, content):
-    with open(path, 'wb') as f:
+    with open(path, 'w') as f:
         f.write(content)
     return path
 

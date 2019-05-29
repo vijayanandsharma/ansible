@@ -18,12 +18,6 @@
 
 # FIXME: replace the python test package
 
-- name: install git, needed for repo installs
-  package:
-    name: git
-    state: present
-  when: ansible_distribution != "MacOSX"
-
 # first some tests installed system-wide
 # verify things were not installed to start with
 
@@ -139,7 +133,7 @@
       - "not (req_installed is changed)"
 
 - name: install the same module from url
-  pip: 
+  pip:
     name: "git+https://github.com/dvarrazzo/pyiso8601#egg=pyiso8601"
     virtualenv: "{{ output_dir }}/pipenv"
     editable: True
@@ -499,3 +493,30 @@
   pip:
     name: "{{ pip_test_packages }}"
     state: absent
+
+# https://github.com/ansible/ansible/issues/47198
+# distribute is a legacy package that will fail on newer Python 3 versions
+- block:
+  - name: make sure the virtualenv does not exist
+    file:
+      state: absent
+      name: "{{ output_dir }}/pipenv"
+
+  - name: install distribute in the virtualenv
+    pip:
+      name: distribute
+      virtualenv: "{{ output_dir }}/pipenv"
+      state: present
+
+  - name: try to remove distribute
+    pip:
+      state: "absent"
+      name: "distribute"
+      virtualenv: "{{ output_dir }}/pipenv"
+    ignore_errors: yes
+    register: remove_distribute
+
+  - name: inspect the cmd
+    assert:
+      that: "'distribute' in remove_distribute.cmd"
+  when: ansible_python.version.major == 2
