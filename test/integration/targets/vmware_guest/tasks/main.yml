@@ -88,8 +88,10 @@
     setup_virtualmachines: true
 - block:
     - include: boot_firmware_d1_c1_f0.yml
-    - include: clone_with_convert.yml
-    - include: clone_customize_guest_test.yml
+    # Failing, see: https://github.com/ansible/ansible/issues/57653
+    # - include: clone_with_convert.yml
+    # - include: clone_customize_guest_test.yml
+    - include: max_connections.yml
   always:
     - name: Remove VM
       vmware_guest:
@@ -106,6 +108,8 @@
         - newvm_DC0_H0_VM1
         - newvm_efi_DC0_H0_VM0
         - newvm_efi_DC0_H0_VM1
+        - newvm_mk_conn_DC0_H0_VM0
+        - newvm_mk_conn_DC0_H0_VM1
         - thin_DC0_H0_VM0
         - thin_DC0_H0_VM1
         - thick_DC0_H0_VM0

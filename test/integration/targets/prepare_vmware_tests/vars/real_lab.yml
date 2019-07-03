@@ -1,30 +1,19 @@
 ---
-dc1: DC0
-ccr1: DC0_C0
-ds1: LocalDS_0
-ds2: LocalDS_1
-f0: F0
-switch1: switch1
-dvswitch1: DVS0
-# The ESXi entries in the inventory
 esxi_hosts:
-  - esxi-67-1.lab
-  - esxi-67-2.lab
-esxi_user: root
-esxi_password: "!234AaAa56"
-esxi1: "{{ esxi_hosts[0] }}"
-esxi2: "{{ esxi_hosts[1] }}"
+  - esxi1.test
+  - esxi2.test
+esxi_password: '{{ esxi1_password }}'
 infra:
   datastores:
     LocalDS_0:
       type: nfs
-      server: 192.168.123.1
-      path: /srv/esx_lab/isos
+      server: gateway.test
+      path: /srv/share/isos
       ro: true
     LocalDS_1:
       type: nfs
-      server: 192.168.123.1
-      path: /srv/esx_lab/vms
+      server: gateway.test
+      path: /srv/share/vms
       ro: false
 virtual_machines:
   - name: DC0_H0_VM0

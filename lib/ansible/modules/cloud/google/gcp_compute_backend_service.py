@@ -33,7 +33,9 @@ module: gcp_compute_backend_service
 description:
 - A Backend Service defines a group of virtual machines that will serve traffic for
   load balancing. This resource is a global backend service, appropriate for external
-  load balancing. For internal load balancing, use a regional backend service instead.
+  load balancing or self-managed internal load balancing.
+- For managed internal load balancing, use a regional backend service instead.
+- Currently self-managed internal load balancing is only available in beta.
 short_description: Creates a GCP BackendService
 version_added: 2.6
 author: Google Inc. (@googlecloudplatform)
@@ -103,8 +105,8 @@ options:
         description:
         - The max number of simultaneous connections for the group. Can be used with
           either CONNECTION or UTILIZATION balancing modes.
-        - For CONNECTION mode, either maxConnections or maxConnectionsPerInstance
-          must be set.
+        - For CONNECTION mode, either maxConnections or one of maxConnectionsPerInstance
+          or maxConnectionsPerEndpoint, as appropriate for group type, must be set.
         required: false
       max_connections_per_instance:
         description:
@@ -114,12 +116,21 @@ options:
         - For CONNECTION mode, either maxConnections or maxConnectionsPerInstance
           must be set.
         required: false
+      max_connections_per_endpoint:
+        description:
+        - The max number of simultaneous connections that a single backend network
+          endpoint can handle. This is used to calculate the capacity of the group.
+          Can be used in either CONNECTION or UTILIZATION balancing modes.
+        - For CONNECTION mode, either maxConnections or maxConnectionsPerEndpoint
+          must be set.
+        required: false
+        version_added: 2.9
       max_rate:
         description:
         - The max requests per second (RPS) of the group.
         - Can be used with either RATE or UTILIZATION balancing modes, but required
-          if RATE mode. For RATE mode, either maxRate or maxRatePerInstance must be
-          set.
+          if RATE mode. For RATE mode, either maxRate or one of maxRatePerInstance
+          or maxRatePerEndpoint, as appropriate for group type, must be set.
         required: false
       max_rate_per_instance:
         description:
@@ -128,6 +139,14 @@ options:
           balancing mode. For RATE mode, either maxRate or maxRatePerInstance must
           be set.
         required: false
+      max_rate_per_endpoint:
+        description:
+        - The max requests per second (RPS) that a single backend network endpoint
+          can handle. This is used to calculate the capacity of the group. Can be
+          used in either balancing mode. For RATE mode, either maxRate or maxRatePerEndpoint
+          must be set.
+        required: false
+        version_added: 2.9
       max_utilization:
         description:
         - Used when balancingMode is UTILIZATION. This ratio defines the CPU utilization
@@ -213,6 +232,8 @@ options:
     - The list of URLs to the HttpHealthCheck or HttpsHealthCheck resource for health
       checking this BackendService. Currently at most one health check can be specified,
       and a health check is required.
+    - For internal load balancing, a URL to a HealthCheck resource must be specified
+      instead.
     required: true
   iap:
     description:
@@ -237,9 +258,9 @@ options:
     description:
     - Indicates whether the backend service will be used with internal or external
       load balancing. A backend service created for one type of load balancing cannot
-      be used with the other. Must be `EXTERNAL` for a global backend service. Defaults
-      to `EXTERNAL`.
-    - 'Some valid choices include: "EXTERNAL"'
+      be used with the other. Must be `EXTERNAL` or `INTERNAL_SELF_MANAGED` for a
+      global backend service. Defaults to `EXTERNAL`.
+    - 'Some valid choices include: "EXTERNAL", "INTERNAL_SELF_MANAGED"'
     required: false
     default: EXTERNAL
     version_added: 2.7
@@ -385,8 +406,8 @@ backends:
       description:
       - The max number of simultaneous connections for the group. Can be used with
         either CONNECTION or UTILIZATION balancing modes.
-      - For CONNECTION mode, either maxConnections or maxConnectionsPerInstance must
-        be set.
+      - For CONNECTION mode, either maxConnections or one of maxConnectionsPerInstance
+        or maxConnectionsPerEndpoint, as appropriate for group type, must be set.
       returned: success
       type: int
     maxConnectionsPerInstance:
@@ -398,12 +419,21 @@ backends:
         be set.
       returned: success
       type: int
+    maxConnectionsPerEndpoint:
+      description:
+      - The max number of simultaneous connections that a single backend network endpoint
+        can handle. This is used to calculate the capacity of the group. Can be used
+        in either CONNECTION or UTILIZATION balancing modes.
+      - For CONNECTION mode, either maxConnections or maxConnectionsPerEndpoint must
+        be set.
+      returned: success
+      type: int
     maxRate:
       description:
       - The max requests per second (RPS) of the group.
       - Can be used with either RATE or UTILIZATION balancing modes, but required
-        if RATE mode. For RATE mode, either maxRate or maxRatePerInstance must be
-        set.
+        if RATE mode. For RATE mode, either maxRate or one of maxRatePerInstance or
+        maxRatePerEndpoint, as appropriate for group type, must be set.
       returned: success
       type: int
     maxRatePerInstance:
@@ -412,6 +442,14 @@ backends:
         This is used to calculate the capacity of the group. Can be used in either
         balancing mode. For RATE mode, either maxRate or maxRatePerInstance must be
         set.
+      returned: success
+      type: str
+    maxRatePerEndpoint:
+      description:
+      - The max requests per second (RPS) that a single backend network endpoint can
+        handle. This is used to calculate the capacity of the group. Can be used in
+        either balancing mode. For RATE mode, either maxRate or maxRatePerEndpoint
+        must be set.
       returned: success
       type: str
     maxUtilization:
@@ -515,6 +553,8 @@ healthChecks:
   - The list of URLs to the HttpHealthCheck or HttpsHealthCheck resource for health
     checking this BackendService. Currently at most one health check can be specified,
     and a health check is required.
+  - For internal load balancing, a URL to a HealthCheck resource must be specified
+    instead.
   returned: success
   type: list
 id:
@@ -552,8 +592,8 @@ loadBalancingScheme:
   description:
   - Indicates whether the backend service will be used with internal or external load
     balancing. A backend service created for one type of load balancing cannot be
-    used with the other. Must be `EXTERNAL` for a global backend service. Defaults
-    to `EXTERNAL`.
+    used with the other. Must be `EXTERNAL` or `INTERNAL_SELF_MANAGED` for a global
+    backend service. Defaults to `EXTERNAL`.
   returned: success
   type: str
 name:
@@ -630,8 +670,10 @@ def main():
                     group=dict(type='str'),
                     max_connections=dict(type='int'),
                     max_connections_per_instance=dict(type='int'),
+                    max_connections_per_endpoint=dict(type='int'),
                     max_rate=dict(type='int'),
                     max_rate_per_instance=dict(type='str'),
+                    max_rate_per_endpoint=dict(type='str'),
                     max_utilization=dict(default=0.8, type='str'),
                 ),
             ),
@@ -897,8 +939,10 @@ class BackendServiceBackendsArray(object):
                 u'group': item.get('group'),
                 u'maxConnections': item.get('max_connections'),
                 u'maxConnectionsPerInstance': item.get('max_connections_per_instance'),
+                u'maxConnectionsPerEndpoint': item.get('max_connections_per_endpoint'),
                 u'maxRate': item.get('max_rate'),
                 u'maxRatePerInstance': item.get('max_rate_per_instance'),
+                u'maxRatePerEndpoint': item.get('max_rate_per_endpoint'),
                 u'maxUtilization': item.get('max_utilization'),
             }
         )
@@ -912,8 +956,10 @@ class BackendServiceBackendsArray(object):
                 u'group': item.get(u'group'),
                 u'maxConnections': item.get(u'maxConnections'),
                 u'maxConnectionsPerInstance': item.get(u'maxConnectionsPerInstance'),
+                u'maxConnectionsPerEndpoint': item.get(u'maxConnectionsPerEndpoint'),
                 u'maxRate': item.get(u'maxRate'),
                 u'maxRatePerInstance': item.get(u'maxRatePerInstance'),
+                u'maxRatePerEndpoint': item.get(u'maxRatePerEndpoint'),
                 u'maxUtilization': item.get(u'maxUtilization'),
             }
         )
